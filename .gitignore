@@ -1,0 +1,7 @@
+dss_env/
+data/raw/*
+data/processed/*
+__pycache__/
+*.parquet
+*.crc
+.DS_Store
