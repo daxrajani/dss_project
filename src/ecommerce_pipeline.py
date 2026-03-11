@@ -108,9 +108,9 @@ if __name__ == "__main__":
     spark.sparkContext.setLogLevel("ERROR")
     
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    events_path = os.path.join(base_dir, 'data', 'raw', 'events.csv')
-    catalog_path = os.path.join(base_dir, 'data', 'raw', 'catalog.csv')
-    orders_path = os.path.join(base_dir, 'data', 'raw', 'orders.csv')
+    events_path = os.path.join(base_dir, 'data', 'raw', 'kaggle_events')
+    catalog_path = os.path.join(base_dir, 'data', 'raw', 'kaggle_catalog')
+    orders_path = os.path.join(base_dir, 'data', 'raw', 'kaggle_orders')
     
     print("\n=============================================")
     print(" DSS E-COMMERCE ANALYTICS PIPELINE")
