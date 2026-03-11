@@ -1,7 +1,7 @@
 import os
 from pyspark.sql import SparkSession
 from pyspark.sql.window import Window
-from pyspark.sql.functions import col, unix_timestamp, lag, when, sum as _sum, max as _max, concat_ws, to_date, round, last, row_number, expr
+from pyspark.sql.functions import col, unix_timestamp, lag, when, sum as _sum, max as _max, concat_ws, to_date, round, row_number, avg, abs
 
 # --- PHASE A: SESSIONIZATION ---
 def build_sessions(spark, events_path):
@@ -47,41 +47,56 @@ def analyze_funnels(spark, sessionized_events, catalog_path):
 
 # --- PHASE C: LAST-TOUCH ATTRIBUTION ---
 def attribute_orders(spark, sessionized_events, orders_path):
-    print(">>> Executing Complex Attribution Join...")
     orders_df = spark.read.csv(orders_path, header=True, inferSchema=True)
-    
-    # We only care about events that could have driven the sale (not direct traffic)
-    # The professor specified: "most recent non-direct referrer"
     valid_events = sessionized_events.filter(col("referrer") != "direct")
     
-    # Join Orders with valid events on user_id where the event happened BEFORE the order
     joined_df = orders_df.alias("o").join(
         valid_events.alias("e"),
         on="user_id",
         how="left"
     ).filter(col("e.timestamp") <= col("o.timestamp"))
     
-    # Optional constraint: Filter out events older than 24 hours (86400 seconds) from the order
-    time_constrained_df = joined_df.filter(
-        (unix_timestamp("o.timestamp") - unix_timestamp("e.timestamp")) <= 86400
-    )
+    time_constrained_df = joined_df.filter((unix_timestamp("o.timestamp") - unix_timestamp("e.timestamp")) <= 86400)
     
-    # Window to find the MOST RECENT event for each order
     attribution_window = Window.partitionBy("o.order_id").orderBy(col("e.timestamp").desc())
-    
     ranked_df = time_constrained_df.withColumn("rank", row_number().over(attribution_window))
     
-    # Filter to only the #1 most recent non-direct event per order
-    final_attribution = ranked_df.filter(col("rank") == 1).select(
-        col("o.order_id"),
-        col("o.user_id"),
-        col("o.timestamp").alias("order_time"),
-        col("o.total_amount"),
-        col("e.referrer").alias("attributed_referrer"),
-        col("e.timestamp").alias("referral_time")
+    return ranked_df.filter(col("rank") == 1).select(
+        col("o.order_id"), col("o.user_id"), col("o.timestamp").alias("order_time"),
+        col("o.total_amount"), col("e.referrer").alias("attributed_referrer"), col("e.timestamp").alias("referral_time")
+    )
+
+# --- PHASE D: SYSTEM ANOMALY DETECTION ---
+def detect_anomalies(spark, funnel_metrics):
+    print(">>> Executing 7-Day Rolling Baseline Anomaly Detection...")
+    
+    # Cast date to unix timestamp to measure the exact 7-day window in seconds
+    df = funnel_metrics.withColumn("date_ts", unix_timestamp(col("date")))
+    
+    # Define the 7-day trailing window (86400 seconds * 7 = 604800)
+    # Range is between 7 days ago and 1 day ago (so we don't include today in the baseline)
+    rolling_window = Window.partitionBy("category", "device", "referrer") \
+                           .orderBy("date_ts") \
+                           .rangeBetween(-604800, -86400)
+                           
+    # Calculate the trailing 7-day average of the purchase conversion rate
+    anomaly_df = df.withColumn("trailing_7d_avg", round(avg("cart_to_buy_pct").over(rolling_window), 2))
+    
+    # Compare today's rate to the historical baseline
+    anomaly_df = anomaly_df.withColumn(
+        "deviation", 
+        when(col("trailing_7d_avg").isNotNull(), round(col("cart_to_buy_pct") - col("trailing_7d_avg"), 2))
+        .otherwise(0.0)
     )
     
-    return final_attribution
+    # Flag as an anomaly if the conversion rate spiked or dropped by more than 15%
+    final_anomalies = anomaly_df.withColumn(
+        "is_anomaly",
+        when(abs(col("deviation")) > 15.0, True).otherwise(False)
+    ).drop("date_ts")
+    
+    # Return only the rows that triggered the anomaly alert
+    return final_anomalies.filter(col("is_anomaly") == True).orderBy("date", ascending=False)
 
 if __name__ == "__main__":
     spark = SparkSession.builder \
@@ -103,17 +118,18 @@ if __name__ == "__main__":
     
     print(">>> Phase A: Building Sessions...")
     sessionized_events = build_sessions(spark, events_path)
-    # Cache this DataFrame because we use it in both Phase B and Phase C
     sessionized_events.cache()
     
     print("\n>>> Phase B: Building Conversion Funnels...")
     funnel_metrics = analyze_funnels(spark, sessionized_events, catalog_path)
-    print(">>> Sample Funnel Metrics:")
-    funnel_metrics.show(5, truncate=False)
+    funnel_metrics.cache()
     
     print("\n>>> Phase C: Executing Last-Touch Attribution...")
     attribution_results = attribute_orders(spark, sessionized_events, orders_path)
-    print(">>> Order Attribution Results:")
-    attribution_results.show(10, truncate=False)
+    
+    print("\n>>> Phase D: Scanning for Anomalies...")
+    anomalies = detect_anomalies(spark, funnel_metrics)
+    print(">>> TOP ANOMALIES DETECTED (System-Level Alerts):")
+    anomalies.select("date", "category", "device", "referrer", "cart_to_buy_pct", "trailing_7d_avg", "deviation").show(10, truncate=False)
     
     spark.stop()
