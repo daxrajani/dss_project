@@ -24,7 +24,7 @@ def analyze_funnels(spark, sessionized_events, catalog_path):
     enriched_df = enriched_df.withColumn("date", to_date("timestamp"))
     
     funnel_flags = enriched_df.withColumn("is_view", when(col("event_type") == "view", 1).otherwise(0)) \
-                              .withColumn("is_cart", when(col("event_type") == "add_to_cart", 1).otherwise(0)) \
+                              .withColumn("is_cart", when(col("event_type") == "cart", 1).otherwise(0)) \
                               .withColumn("is_purchase", when(col("event_type") == "purchase", 1).otherwise(0))
     
     session_funnel = funnel_flags.groupBy("session_id", "date", "category", "device", "referrer") \
@@ -43,7 +43,7 @@ def analyze_funnels(spark, sessionized_events, catalog_path):
         "cart_to_buy_pct", when(col("total_sessions_with_cart") == 0, 0.0).otherwise(round((col("total_sessions_with_purchase") / col("total_sessions_with_cart")) * 100, 2))
     )
                               
-    return final_rates.orderBy("date", "category", ascending=False)
+    return final_rates.filter(col("category") != "unknown").orderBy("date", "category", ascending=False)
 
 # --- PHASE C: LAST-TOUCH ATTRIBUTION ---
 def attribute_orders(spark, sessionized_events, orders_path):
@@ -102,15 +102,16 @@ if __name__ == "__main__":
     spark = SparkSession.builder \
         .appName("Ecommerce_Analytics") \
         .master("local[*]") \
-        .config("spark.sql.shuffle.partitions", "8") \
         .getOrCreate()
     
     spark.sparkContext.setLogLevel("ERROR")
     
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    events_path = os.path.join(base_dir, 'data', 'raw', 'kaggle_events')
-    catalog_path = os.path.join(base_dir, 'data', 'raw', 'kaggle_catalog')
-    orders_path = os.path.join(base_dir, 'data', 'raw', 'kaggle_orders')
+    
+    # Pointing back to the clean, fast dummy data for the presentation!
+    events_path = os.path.join(base_dir, 'data', 'raw', 'events.csv')
+    catalog_path = os.path.join(base_dir, 'data', 'raw', 'catalog.csv')
+    orders_path = os.path.join(base_dir, 'data', 'raw', 'orders.csv')
     
     print("\n=============================================")
     print(" DSS E-COMMERCE ANALYTICS PIPELINE")
@@ -122,14 +123,16 @@ if __name__ == "__main__":
     
     print("\n>>> Phase B: Building Conversion Funnels...")
     funnel_metrics = analyze_funnels(spark, sessionized_events, catalog_path)
-    funnel_metrics.cache()
     
-    print("\n>>> Phase C: Executing Last-Touch Attribution...")
-    attribution_results = attribute_orders(spark, sessionized_events, orders_path)
+    print("\n>>> Sample Funnel Metrics (Midterm Deliverable):")
+    funnel_metrics.show(10, truncate=False)
     
-    print("\n>>> Phase D: Scanning for Anomalies...")
-    anomalies = detect_anomalies(spark, funnel_metrics)
-    print(">>> TOP ANOMALIES DETECTED (System-Level Alerts):")
-    anomalies.select("date", "category", "device", "referrer", "cart_to_buy_pct", "trailing_7d_avg", "deviation").show(10, truncate=False)
+    print("\n>>> Exporting Funnel Metrics to CSV...")
+    # Define the output path
+    output_csv_path = os.path.join(base_dir, 'data', 'funnel_metrics_output')
     
+    # Coalesce(1) forces Spark to write a single CSV file instead of multiple partitions
+    funnel_metrics.coalesce(1).write.mode("overwrite").csv(output_csv_path, header=True)
+    print(f">>> Successfully saved CSV to: {output_csv_path}")
+
     spark.stop()
