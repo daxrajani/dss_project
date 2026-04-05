@@ -9,3 +9,4 @@ __pycache__/
 *.crc
 .DS_Store
 *.bak
+CLAUDE.md
