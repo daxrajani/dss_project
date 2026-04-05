@@ -1,0 +1,40 @@
+============================================================
+ DSS PARQUET PARTITIONING ANALYSIS  (Cloud — GCP Dataproc 2w)
+============================================================
+ Input           : gs://dss-project-dax/data/full/2019-Oct.csv
+ Sample fraction : 0.15
+ Cluster         : dss-bench-2w-10gb-14824 (2 workers, n1-standard-4)
+
+ Purchase events loaded : 110,915
+
+>>> Writing flat (unpartitioned) Parquet to GCS ...
+    Written in 22.9s
+
+>>> Writing date-partitioned Parquet to GCS ...
+    Written in 26.0s
+
+--- QUERY 1: Single-day filter (2019-10-15) ---
+  Flat        : 4.25s  →  3,860 rows
+  Partitioned : 1.37s  →  3,860 rows
+  Speedup     : 3.11x
+
+--- QUERY 2: 7-day range filter (2019-10-10 to 2019-10-17) ---
+  Flat        : 3.09s  →  32,402 rows
+  Partitioned : 1.78s  →  32,402 rows
+  Speedup     : 1.73x
+
+============================================================
+ PARTITIONING SUMMARY
+============================================================
+ Metric                                    Flat   Partitioned
+ ----------------------------------- ---------- -------------
+ Write time (s)                           22.9s         26.0s
+ Single-day query (s)                     4.25s         1.37s
+ 7-day range query (s)                    3.09s         1.78s
+ Single-day speedup                       1.00x         3.11x
+ 7-day speedup                            1.00x         1.73x
+============================================================
+ NOTE: Partition pruning lets Spark skip entire date directories,
+       reducing I/O proportional to the fraction of dates queried.
+
+Results (Parquet files) at: gs://dss-project-dax/results/partition_analysis/

@@ -1,0 +1,33 @@
+============================================================
+ DSS BROADCAST JOIN OPTIMIZATION  (Cloud — GCP Dataproc 2w)
+============================================================
+ Input           : gs://dss-project-dax/data/full/2019-Oct.csv
+ Sample fraction : 0.3 (~25M rows)
+ Auto-broadcast  : DISABLED (fair baseline comparison)
+ Cluster         : dss-bench-2w-10gb-14824 (2 workers, n1-standard-4)
+
+ Orders       : 153,628 rows
+ Session refs : session_referrers table (non-direct sessions)
+
+--- BASELINE: Shuffle Join (SortMergeJoin) ---
+
+ Result: 153,628 attributed orders  |  Time: 11.33s
+
+--- OPTIMIZED: Broadcast Join (orders broadcast to all workers) ---
+
+ Result: 153,628 attributed orders  |  Time: 7.15s
+
+============================================================
+ OPTIMIZATION RESULTS
+============================================================
+ Strategy                      Time           Orders    Speedup
+ ---------------------------- ----------  ------------  -------
+ Shuffle join (baseline)        11.33s         153,628   1.00x
+ Broadcast join                  7.15s         153,628   1.58x
+============================================================
+
+ NOTE: On a distributed cluster broadcast eliminates network shuffle entirely.
+       The broadcast benefit grows with cluster size since it avoids
+       cross-node data transfer for the smaller (orders) table.
+
+Results written to: gs://dss-project-dax/results/broadcast_join/

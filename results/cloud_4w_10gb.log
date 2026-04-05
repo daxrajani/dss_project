@@ -1,0 +1,141 @@
+Waiting on operation [projects/project-a0b2f7d8-d4bf-4557-923/regions/us-central1/operations/240ef18d-efdd-33c4-8679-6e9ddb36f2d2].
+Waiting for cluster creation operation...
+WARNING: Failed to validate permissions required for default service account: '704841236800-compute@developer.gserviceaccount.com'. Cluster creation could still be successful if required permissions have been granted to the respective service accounts as mentioned in the document https://cloud.google.com/dataproc/docs/concepts/configuring-clusters/service-accounts#dataproc_service_accounts_2. This could be due to Cloud Resource Manager API hasn't been enabled in your project '704841236800' before or it is disabled. Enable it by visiting 'https://console.developers.google.com/apis/api/cloudresourcemanager.googleapis.com/overview?project=704841236800'.
+WARNING: For PD-Standard without local SSDs, we strongly recommend provisioning 1TB or larger to ensure consistently high I/O performance. See https://cloud.google.com/compute/docs/disks/performance for information on disk I/O performance.
+WARNING: The firewall rules for specified network or subnetwork would allow ingress traffic from 0.0.0.0/0, which could be a security risk.
+.......................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................done.
+Created [https://dataproc.googleapis.com/v1/projects/project-a0b2f7d8-d4bf-4557-923/regions/us-central1/clusters/dss-bench-4w-10gb-8686] Cluster placed in zone [us-central1-b].
+Job [8cfdef2248984739abcaa9c2f07a6de1] submitted.
+Waiting for job output...
+26/04/04 20:43:27 INFO SparkEnv: Registering MapOutputTracker
+26/04/04 20:43:28 INFO SparkEnv: Registering BlockManagerMaster
+26/04/04 20:43:28 INFO SparkEnv: Registering BlockManagerMasterHeartbeat
+26/04/04 20:43:28 INFO SparkEnv: Registering OutputCommitCoordinator
+26/04/04 20:43:31 INFO DataprocSparkPlugin: Registered 128 driver metrics
+26/04/04 20:43:33 INFO DefaultNoHARMFailoverProxyProvider: Connecting to ResourceManager at dss-bench-4w-10gb-8686-m.us-central1-b.c.project-a0b2f7d8-d4bf-4557-923.internal./10.128.0.47:8032
+26/04/04 20:43:33 INFO AHSProxy: Connecting to Application History server at dss-bench-4w-10gb-8686-m.us-central1-b.c.project-a0b2f7d8-d4bf-4557-923.internal./10.128.0.47:10200
+26/04/04 20:43:34 INFO Configuration: resource-types.xml not found
+26/04/04 20:43:34 INFO ResourceUtils: Unable to find 'resource-types.xml'.
+26/04/04 20:43:36 INFO YarnClientImpl: Submitted application application_1775335311466_0001
+26/04/04 20:43:37 INFO DefaultNoHARMFailoverProxyProvider: Connecting to ResourceManager at dss-bench-4w-10gb-8686-m.us-central1-b.c.project-a0b2f7d8-d4bf-4557-923.internal./10.128.0.47:8030
+26/04/04 20:43:39 INFO GoogleCloudStorageImpl: Ignoring exception of type GoogleJsonResponseException; verified object already exists with desired state.
+
+============================================================
+ DSS CLOUD PIPELINE
+============================================================
+ Input           : gs://dss-project-dax/data/full/2019-Oct.csv
+ Output          : gs://dss-project-dax/results/4w_10gb
+ Sample fraction : 2.0
+============================================================
+
+>>> [ETL 1/5] Reading raw events ...
+    Doubling dataset (union trick for ~10 GB variant) ...
+    Loaded 84,897,528 rows  (38.4s)
+
+>>> [ETL 2/5] Synthesising device & referrer columns ...
+    Done  (0.1s)
+
+>>> [ETL 3/5] Deriving orders from purchase events ...
+    1,485,698 orders  (48.0s)
+
+>>> [ETL 4/5] Deriving product catalog ...
+    166,794 products  (43.0s)
+
+    ETL total: 129.4s
+
+>>> [WRITE] Saving ETL outputs ...
+    ETL Parquet written  (264.3s)
+
+>>> [ATTR 1/2] Building session_referrers (30-min inactivity window) ...
+    15,592,850 sessions  (9,354,989 non-direct)  (220.5s)
+
+>>> [ATTR 2/2] Running last-touch attribution (24-hr lookback) ...
+    1,051,458 attributed  (434,240 unattributed)  (67.3s)
+
+>>> [WRITE] Saving attribution outputs ...
+    Attribution Parquet written  (75.2s)
+
+>>> [ANOM 1/2] Computing system-level daily anomalies ...
+26/04/04 20:56:32 WARN WindowExec: No Partition Defined for Window operation! Moving all data to a single partition, this can cause serious performance degradation.
+26/04/04 20:56:32 WARN WindowExec: No Partition Defined for Window operation! Moving all data to a single partition, this can cause serious performance degradation.
+    31 days, 6 anomalies flagged  (4.6s)
+
+>>> [ANOM 2/2] Computing per-category daily anomalies ...
+    3261 (date,category) rows, 460 anomalies flagged  (12.2s)
+
+>>> [WRITE] Saving anomaly detection outputs ...
+    Anomaly Parquet written  (13.2s)
+
+============================================================
+ PIPELINE SUMMARY
+============================================================
+ Metric                                        Value
+ ----------------------------------- ---------------
+ Input rows                               84,897,528
+ Orders derived                            1,485,698
+ Catalog products                            166,794
+ Orders attributed                         1,051,458
+ Days analysed                                    31
+ System anomalies flagged                          6
+ Category (date,cat) rows                      3,261
+ Category anomalies flagged                      460
+ ----------------------------------- ---------------
+ ETL total                                    129.4s
+   read + sample/double                        38.4s
+   enrich (device+referrer)                     0.1s
+   orders derivation                           48.0s
+   catalog derivation                          43.0s
+   ETL Parquet write                          264.3s
+ Attribution total                            287.8s
+   session_referrers build                    220.5s
+   last-touch join                             67.3s
+   attribution Parquet write                   75.2s
+ Anomaly detection total                       16.9s
+   daily anomalies                              4.6s
+   category anomalies                          12.2s
+   anomaly Parquet write                       13.2s
+ ----------------------------------- ---------------
+ TOTAL PIPELINE TIME                          799.8s
+============================================================
+ Output path: gs://dss-project-dax/results/4w_10gb
+============================================================
+
+Job [8cfdef2248984739abcaa9c2f07a6de1] finished successfully.
+done: true
+driverControlFilesUri: gs://dataproc-staging-us-central1-704841236800-wzq7a0lk/google-cloud-dataproc-metainfo/8cc34e30-cc76-4c6a-85ec-a37ade6aa9a8/jobs/8cfdef2248984739abcaa9c2f07a6de1/
+driverOutputResourceUri: gs://dataproc-staging-us-central1-704841236800-wzq7a0lk/google-cloud-dataproc-metainfo/8cc34e30-cc76-4c6a-85ec-a37ade6aa9a8/jobs/8cfdef2248984739abcaa9c2f07a6de1/driveroutput
+jobUuid: 3b3a6db2-df54-3ccd-8c0d-fcb6bfb9ab48
+placement:
+  clusterName: dss-bench-4w-10gb-8686
+  clusterUuid: 8cc34e30-cc76-4c6a-85ec-a37ade6aa9a8
+pysparkJob:
+  args:
+  - --input=gs://dss-project-dax/data/full/2019-Oct.csv
+  - --output=gs://dss-project-dax/results/4w_10gb
+  - --sample-fraction=2.0
+  mainPythonFileUri: gs://dss-project-dax/scripts/cloud_pipeline.py
+reference:
+  jobId: 8cfdef2248984739abcaa9c2f07a6de1
+  projectId: project-a0b2f7d8-d4bf-4557-923
+status:
+  state: DONE
+  stateStartTime: '2026-04-04T20:57:04.815064Z'
+statusHistory:
+- state: PENDING
+  stateStartTime: '2026-04-04T20:43:18.234715Z'
+- state: SETUP_DONE
+  stateStartTime: '2026-04-04T20:43:18.326830Z'
+- details: Agent reported job success
+  state: RUNNING
+  stateStartTime: '2026-04-04T20:43:18.795981Z'
+yarnApplications:
+- memoryMbSeconds: '20726870'
+  name: DSS_Cloud_Pipeline
+  progress: 1.0
+  state: FINISHED
+  trackingUrl: http://dss-bench-4w-10gb-8686-m.us-central1-b.c.project-a0b2f7d8-d4bf-4557-923.internal.:8088/proxy/application_1775335311466_0001/
+  vcoreSeconds: '6321'
+Waiting on operation [projects/project-a0b2f7d8-d4bf-4557-923/regions/us-central1/operations/810ff2b0-7283-365c-86bb-5f1faf3cb7ba].
+Waiting for cluster deletion operation...
+...............................................................................................................................done.
+Deleted [https://dataproc.googleapis.com/v1/projects/project-a0b2f7d8-d4bf-4557-923/regions/us-central1/clusters/dss-bench-4w-10gb-8686].

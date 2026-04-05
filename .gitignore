@@ -1,7 +1,11 @@
 dss_env/
 data/raw/*
 data/processed/*
+data/data_set/*
+data/benchmark/*
+data/funnel_metrics_output/*
 __pycache__/
 *.parquet
 *.crc
 .DS_Store
+*.bak
