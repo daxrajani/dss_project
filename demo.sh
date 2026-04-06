@@ -10,6 +10,7 @@
 #    bash demo.sh all         — Cloud demo + results (no streaming)
 # =============================================================================
 
+PYTHON="$HOME/google-cloud-sdk/platform/bundledpythonunix/bin/python3"
 CLUSTER="dss-bench-2w-10gb-14824"
 REGION="us-central1"
 PROJECT="project-a0b2f7d8-d4bf-4557-923"
@@ -86,11 +87,11 @@ demo_stream() {
     echo -e "${GREEN}Starting streaming job (Ctrl+C to stop)...${RESET}\n"
 
     # Start producer in background
-    python3 "$SCRIPT_DIR/src/stream_producer.py" --spike-every 5 --interval 2 &
+    $PYTHON "$SCRIPT_DIR/src/stream_producer.py" --spike-every 5 --interval 2 &
     PRODUCER_PID=$!
 
     # Start streaming job (foreground — shows output)
-    python3 "$SCRIPT_DIR/src/streaming_job.py" --test-timeout 60
+    $PYTHON "$SCRIPT_DIR/src/streaming_job.py" --test-timeout 60
 
     # Cleanup
     kill $PRODUCER_PID 2>/dev/null
