@@ -34,7 +34,7 @@ demo_cloud() {
     header "DSS CLOUD PIPELINE DEMO — GCP Dataproc"
 
     echo -e "${YELLOW}Cluster  :${RESET} $CLUSTER"
-    echo -e "${YELLOW}Workers  :${RESET} 2 x n1-standard-4"
+    echo -e "${YELLOW}Workers  :${RESET} 5 x n2-standard-2"
     echo -e "${YELLOW}Data     :${RESET} $INPUT"
     echo -e "${YELLOW}Sample   :${RESET} 20%  (~8.5M rows)"
     echo -e "${YELLOW}Output   :${RESET} $BUCKET/results/demo_run"
