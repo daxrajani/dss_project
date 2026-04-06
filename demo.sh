@@ -11,6 +11,8 @@
 # =============================================================================
 
 PYTHON="$HOME/google-cloud-sdk/platform/bundledpythonunix/bin/python3"
+GCLOUD="$HOME/google-cloud-sdk/bin/gcloud"
+GSUTIL="$HOME/google-cloud-sdk/bin/gsutil"
 CLUSTER="dss-bench-2w-10gb-14824"
 REGION="us-central1"
 PROJECT="project-a0b2f7d8-d4bf-4557-923"
@@ -39,14 +41,14 @@ demo_cloud() {
     echo ""
 
     echo -e "${GREEN}Checking cluster status...${RESET}"
-    gcloud dataproc clusters describe $CLUSTER \
+    $GCLOUD dataproc clusters describe $CLUSTER \
         --region=$REGION --project=$PROJECT \
         --format="value(status.state)" 2>/dev/null | \
         xargs -I{} echo -e "  Cluster state: ${BOLD}{}${RESET}"
     echo ""
 
     echo -e "${GREEN}Submitting pipeline job to Dataproc...${RESET}\n"
-    gcloud dataproc jobs submit pyspark $SCRIPTS/cloud_pipeline.py \
+    $GCLOUD dataproc jobs submit pyspark $SCRIPTS/cloud_pipeline.py \
         --cluster=$CLUSTER \
         --region=$REGION \
         --project=$PROJECT \
@@ -57,7 +59,7 @@ demo_cloud() {
     echo -e "\n${GREEN}Pipeline complete! Results at: $BUCKET/results/demo_run${RESET}"
     echo ""
     echo -e "${YELLOW}Listing output files in GCS:${RESET}"
-    gsutil ls $BUCKET/results/demo_run/ 2>/dev/null
+    $GSUTIL ls $BUCKET/results/demo_run/ 2>/dev/null
 }
 
 # =============================================================================
