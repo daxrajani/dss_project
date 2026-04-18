@@ -36,3 +36,14 @@ echo " ALL 9 COMBINATIONS COMPLETE"
 echo " $(date)"
 echo " Logs in: results/"
 echo "================================================================"
+
+# ── Generate all performance charts from the fresh log files ─────────────────
+echo ""
+echo "Generating performance charts from benchmark logs ..."
+PYTHON=$(command -v python3 2>/dev/null || echo python3)
+"$PYTHON" "${SCRIPT_DIR}/generate_perf_charts.py" --parse-logs
+
+echo ""
+echo "================================================================"
+echo " Charts saved to: results/charts/"
+echo "================================================================"

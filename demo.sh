@@ -182,6 +182,24 @@ demo_results() {
 }
 
 # =============================================================================
+#  PERF — generate performance charts from benchmark results
+# =============================================================================
+demo_perf() {
+    header "DSS PERFORMANCE CHARTS"
+
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+    echo -e "${YELLOW}Generating all 6 performance charts from results/benchmark_summary.csv ...${RESET}"
+    echo ""
+    $PYTHON "$SCRIPT_DIR/src/generate_perf_charts.py" --parse-logs
+
+    echo ""
+    echo -e "${YELLOW}Charts saved to:${RESET} results/charts/"
+    echo ""
+    ls "$RESULTS_DIR/charts/"*.png 2>/dev/null | xargs -I{} basename {}
+}
+
+# =============================================================================
 #  ANALYZE — download GCS pipeline output and show analytics results
 # =============================================================================
 demo_analyze() {
@@ -214,18 +232,20 @@ case "${1:-all}" in
     stream)  demo_stream ;;
     results) demo_results ;;
     analyze) demo_analyze "$@" ;;
+    perf)    demo_perf ;;
     all)
         demo_cloud
         echo ""
         demo_results
         ;;
     *)
-        echo "Usage: bash demo.sh [cloud|stream|results|analyze|all]"
+        echo "Usage: bash demo.sh [cloud|stream|results|analyze|perf|all]"
         echo ""
         echo "  cloud   — Submit live pipeline to GCP Dataproc (shows all 5 stages running)"
         echo "  stream  — Real-time streaming anomaly detection demo (local, 60s)"
         echo "  results — Print benchmark table + optimization results"
         echo "  analyze — Download GCS output + show funnel/attribution/anomaly results + charts"
+        echo "  perf    — Generate all 6 performance charts from scaling study results"
         echo "  all     — Cloud + results (default)"
         echo ""
         echo "  analyze usage:"
