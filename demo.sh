@@ -4,10 +4,15 @@
 #  COEN 6731 — Dax Rajani (40294118) & Harsh Ahuja (40301748)
 #
 #  Usage:
-#    bash demo.sh cloud       — Submit live pipeline job to GCP Dataproc
-#    bash demo.sh stream      — Start real-time streaming demo (local)
-#    bash demo.sh results     — Show benchmark results summary
-#    bash demo.sh all         — Cloud demo + results (no streaming)
+#    bash demo.sh results     — Show pre-computed benchmark results (no GCP needed)
+#    bash demo.sh stream      — Real-time streaming anomaly detection (no GCP needed)
+#    bash demo.sh perf        — Regenerate all performance charts (no GCP needed)
+#    bash demo.sh cloud       — Submit live pipeline to GCP Dataproc (prompts if needed)
+#    bash demo.sh analyze     — Download GCS results and show analytics + charts
+#    bash demo.sh all         — Cloud + results (default)
+#
+#  GCP config is auto-detected from 'gcloud config'.
+#  You will only be prompted for project/bucket if not already configured.
 # =============================================================================
 
 # ── Resolve gcloud/gsutil from PATH or common locations ──────────────
@@ -27,22 +32,52 @@ PYTHON=$(command -v python3 2>/dev/null || echo python3)
 GCLOUD=$(_find_tool gcloud)
 GSUTIL=$(_find_tool gsutil)
 
-# ── GCP config — override via environment variables ──────────────────
-# Set these before running:
-#   export GCP_PROJECT=your-project-id
-#   export GCS_BUCKET=gs://your-bucket
-#   export DATAPROC_CLUSTER=your-cluster-name
-CLUSTER="${DATAPROC_CLUSTER:-dss-demo-5w-1gb}"
-REGION="${GCP_REGION:-us-central1}"
-PROJECT="${GCP_PROJECT:-}"
-BUCKET="${GCS_BUCKET:-}"
-INPUT="${GCS_INPUT:-${BUCKET}/data/2019-Oct.csv}"
-SCRIPTS="${GCS_SCRIPTS:-${BUCKET}/scripts}"
 RESULTS_DIR="results"
 
-# ── Colours ──────────────────────────────────────────────────────────────────
+# ── Colours ─────────────────────────── (defined early so _gcp_setup can use them)
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'
 BOLD='\033[1m'; RESET='\033[0m'
+
+# ── Auto-detect GCP config, prompt for anything still missing ────────
+_gcloud_val() {
+    # Read a value from gcloud config (returns empty string on failure/unset)
+    "$GCLOUD" config get-value "$1" 2>/dev/null | grep -v '^$' | grep -v '(unset)' || true
+}
+
+_gcp_setup() {
+    # 1. Project — env var → gcloud config → prompt
+    PROJECT="${GCP_PROJECT:-}"
+    if [[ -z "$PROJECT" ]]; then
+        PROJECT=$(_gcloud_val project)
+    fi
+    if [[ -z "$PROJECT" ]]; then
+        echo -e "${YELLOW}GCP project not set. Enter your GCP project ID:${RESET}"
+        read -rp "  Project ID: " PROJECT
+    fi
+
+    # 2. Region — env var → gcloud config → default us-central1
+    REGION="${GCP_REGION:-}"
+    if [[ -z "$REGION" ]]; then
+        REGION=$(_gcloud_val compute/region)
+    fi
+    REGION="${REGION:-us-central1}"
+
+    # 3. Bucket — env var → prompt (no reliable auto-detect)
+    BUCKET="${GCS_BUCKET:-}"
+    if [[ -z "$BUCKET" ]]; then
+        echo -e "${YELLOW}GCS bucket not set. Enter your GCS bucket (e.g. gs://my-bucket):${RESET}"
+        read -rp "  GCS bucket: " BUCKET
+        # Normalise — ensure gs:// prefix
+        [[ "$BUCKET" != gs://* ]] && BUCKET="gs://${BUCKET}"
+    fi
+
+    # 4. Derived paths (can be overridden individually)
+    INPUT="${GCS_INPUT:-${BUCKET}/data/2019-Oct.csv}"
+    SCRIPTS="${GCS_SCRIPTS:-${BUCKET}/scripts}"
+    CLUSTER="${DATAPROC_CLUSTER:-dss-demo-5w}"
+
+    export PROJECT REGION BUCKET INPUT SCRIPTS CLUSTER
+}
 
 header() { echo -e "\n${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"; echo -e "${BOLD}${CYAN}  $1${RESET}"; echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"; }
 
@@ -50,8 +85,12 @@ header() { echo -e "\n${BOLD}${CYAN}━━━━━━━━━━━━━━�
 #  CLOUD DEMO — run full pipeline on GCP Dataproc
 # =============================================================================
 demo_cloud() {
+    _gcp_setup
+
     header "DSS CLOUD PIPELINE DEMO — GCP Dataproc"
 
+    echo -e "${YELLOW}Project  :${RESET} $PROJECT"
+    echo -e "${YELLOW}Bucket   :${RESET} $BUCKET"
     echo -e "${YELLOW}Cluster  :${RESET} $CLUSTER"
     echo -e "${YELLOW}Workers  :${RESET} 5 x n2-standard-2"
     echo -e "${YELLOW}Data     :${RESET} $INPUT"
@@ -203,21 +242,18 @@ demo_perf() {
 #  ANALYZE — download GCS pipeline output and show analytics results
 # =============================================================================
 demo_analyze() {
-    header "DSS PIPELINE ANALYTICS RESULTS"
-
-    GCS_OUTPUT="${2:-${BUCKET}/results/demo_run}"
-
-    if [[ -z "$BUCKET" && -z "$2" ]]; then
-        echo -e "${YELLOW}Usage: bash demo.sh analyze gs://YOUR_BUCKET/results/demo_run${RESET}"
-        echo ""
-        echo "  Or set GCS_BUCKET and re-run:"
-        echo "    export GCS_BUCKET=gs://your-bucket"
-        echo "    bash demo.sh analyze"
-        exit 1
+    # If a GCS path was passed as argument use it directly; otherwise auto-detect
+    if [[ -n "${2:-}" ]]; then
+        GCS_OUTPUT="$2"
+    else
+        _gcp_setup
+        GCS_OUTPUT="${BUCKET}/results/demo_run"
     fi
 
-    echo -e "${YELLOW}GCS output path : ${RESET}$GCS_OUTPUT"
-    echo -e "${YELLOW}Charts will be saved to : ${RESET}results/demo_analysis/"
+    header "DSS PIPELINE ANALYTICS RESULTS"
+
+    echo -e "${YELLOW}GCS output path        :${RESET} $GCS_OUTPUT"
+    echo -e "${YELLOW}Charts will be saved to:${RESET} results/demo_analysis/"
     echo ""
 
     SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -239,16 +275,18 @@ case "${1:-all}" in
         demo_results
         ;;
     *)
-        echo "Usage: bash demo.sh [cloud|stream|results|analyze|perf|all]"
+        echo "Usage: bash demo.sh [results|stream|perf|cloud|analyze|all]"
         echo ""
-        echo "  cloud   — Submit live pipeline to GCP Dataproc (shows all 5 stages running)"
-        echo "  stream  — Real-time streaming anomaly detection demo (local, 60s)"
-        echo "  results — Print benchmark table + optimization results"
-        echo "  analyze — Download GCS output + show funnel/attribution/anomaly results + charts"
-        echo "  perf    — Generate all 6 performance charts from scaling study results"
-        echo "  all     — Cloud + results (default)"
+        echo "  No GCP required:"
+        echo "    results  — Print benchmark table + optimization results"
+        echo "    stream   — Real-time streaming anomaly detection (local, ~60s)"
+        echo "    perf     — Regenerate all 6 performance charts from saved results"
         echo ""
-        echo "  analyze usage:"
-        echo "    bash demo.sh analyze gs://YOUR_BUCKET/results/demo_run"
+        echo "  Requires GCP (project + bucket auto-detected from gcloud config):"
+        echo "    cloud    — Submit live pipeline to GCP Dataproc (all 5 stages)"
+        echo "    analyze  — Download GCS output and show funnel/attribution/anomaly results + charts"
+        echo "    all      — cloud + results (default)"
+        echo ""
+        echo "  If gcloud is not configured, cloud and analyze will prompt for project/bucket."
         ;;
 esac
