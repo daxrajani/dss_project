@@ -298,6 +298,11 @@ main {
 }
 #an-empty .ic { font-size:28px; }
 #an-empty .msg { font-size:13px; }
+.chart-ph {
+  color:var(--muted); font-size:13px; padding:60px 20px;
+  border:1px dashed var(--border); border-radius:8px;
+  margin:8px; display:inline-block;
+}
 
 /* ── Metrics bar ── */
 #mbar { display:none; border-top:1px solid var(--border); background:var(--surf); flex-shrink:0; }
@@ -425,11 +430,21 @@ main {
         <span id="last-run-txt">Showing results from previous run</span>
         <span style="opacity:.7">Run pipeline again for fresh data</span>
       </div>
-      <div class="an-tab-bar">
-        <button class="an-tab active" onclick="showAnTab('perf',this)">⏱ Performance</button>
-        <button class="an-tab" onclick="showAnTab('funnel',this)">🔻 Funnel</button>
-        <button class="an-tab" onclick="showAnTab('attr',this)">🔗 Attribution</button>
-        <button class="an-tab" onclick="showAnTab('anom',this)">⚠ Anomalies</button>
+      <div class="an-tab-bar" style="justify-content:space-between;">
+        <div style="display:flex;">
+          <button class="an-tab active" onclick="showAnTab('perf',this)">⏱ Performance</button>
+          <button class="an-tab" onclick="showAnTab('funnel',this)">🔻 Funnel</button>
+          <button class="an-tab" onclick="showAnTab('attr',this)">🔗 Attribution</button>
+          <button class="an-tab" onclick="showAnTab('anom',this)">⚠ Anomalies</button>
+        </div>
+        <button id="an-refresh-btn" onclick="refreshAnalytics()" style="
+          font-size:10px;font-weight:700;padding:4px 11px;margin:4px 10px;
+          border-radius:5px;border:1px solid var(--border);color:var(--muted);
+          background:transparent;cursor:pointer;white-space:nowrap;transition:all .2s;"
+          onmouseover="this.style.borderColor='var(--text)';this.style.color='var(--text)'"
+          onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+          ↻ Generate Charts
+        </button>
       </div>
       <div class="an-panels">
 
@@ -452,71 +467,28 @@ main {
 
         <!-- FUNNEL -->
         <div class="an-tp" id="an-funnel">
-          <div class="an-grid">
-            <div class="cc" style="grid-column:1/-1">
-              <h3>Overall Funnel — Views → Carts → Purchases (Oct 2019)</h3>
-              <div class="cc-wrap"><canvas id="c-funnel-tot"></canvas></div>
-            </div>
-          </div>
-          <div class="an-grid">
-            <div class="cc">
-              <h3>Daily Conversion Rates (%)</h3>
-              <div class="cc-wrap tall"><canvas id="c-conv"></canvas></div>
-            </div>
-            <div class="cc">
-              <h3>Conversion by Device</h3>
-              <div class="cc-wrap tall"><canvas id="c-dev-funnel"></canvas></div>
-            </div>
-          </div>
-          <div class="an-grid">
-            <div class="cc" style="grid-column:1/-1">
-              <h3>Top 10 Categories by Purchases</h3>
-              <div class="cc-wrap"><canvas id="c-topcat"></canvas></div>
-            </div>
+          <div id="chart-funnel-wrap" style="text-align:center;padding:12px 0;">
+            <div class="chart-ph" id="ph-funnel">Run pipeline then click <b>Generate Charts</b></div>
+            <img id="chart-funnel" src="" alt="Funnel chart"
+                 style="display:none;max-width:100%;border-radius:6px;border:1px solid var(--border)">
           </div>
         </div>
 
         <!-- ATTRIBUTION -->
         <div class="an-tp" id="an-attr">
-          <div class="an-grid">
-            <div class="cc">
-              <h3>Orders by Referrer</h3>
-              <div class="cc-wrap"><canvas id="c-attr-ref"></canvas></div>
-            </div>
-            <div class="cc">
-              <h3>Revenue by Referrer ($)</h3>
-              <div class="cc-wrap"><canvas id="c-attr-rev"></canvas></div>
-            </div>
-          </div>
-          <div class="an-grid">
-            <div class="cc">
-              <h3>Orders by Device</h3>
-              <div class="cc-wrap"><canvas id="c-attr-dev"></canvas></div>
-            </div>
-            <div class="cc">
-              <h3>Daily Revenue Over Time ($)</h3>
-              <div class="cc-wrap"><canvas id="c-attr-daily"></canvas></div>
-            </div>
+          <div style="text-align:center;padding:12px 0;">
+            <div class="chart-ph" id="ph-attr">Run pipeline then click <b>Generate Charts</b></div>
+            <img id="chart-attr" src="" alt="Attribution chart"
+                 style="display:none;max-width:100%;border-radius:6px;border:1px solid var(--border)">
           </div>
         </div>
 
         <!-- ANOMALIES -->
         <div class="an-tp" id="an-anom">
-          <div class="an-grid wide">
-            <div class="cc">
-              <h3>Daily Purchase Count + Rolling Avg — Anomalies Highlighted</h3>
-              <div class="cc-wrap tall"><canvas id="c-anom-daily"></canvas></div>
-            </div>
-          </div>
-          <div class="an-grid">
-            <div class="cc">
-              <h3>Top Categories with Most Anomalies</h3>
-              <div class="cc-wrap"><canvas id="c-anom-cat"></canvas></div>
-            </div>
-            <div class="cc">
-              <h3>Anomaly Explanations</h3>
-              <div id="anom-table" style="overflow-y:auto;max-height:200px;font-size:11px;"></div>
-            </div>
+          <div style="text-align:center;padding:12px 0;">
+            <div class="chart-ph" id="ph-anom">Run pipeline then click <b>Generate Charts</b></div>
+            <img id="chart-anom" src="" alt="Anomalies chart"
+                 style="display:none;max-width:100%;border-radius:6px;border:1px solid var(--border)">
           </div>
         </div>
 
@@ -549,7 +521,6 @@ let stageTimes = {};
 let vmRefreshTimer = null;
 let charts = {};
 let currentWorkers = 0;
-let cachedAnalytics = null;
 
 // ── Tab navigation ─────────────────────────────────────
 function showTab(id, btn) {
@@ -558,11 +529,6 @@ function showTab(id, btn) {
   btn.classList.add('active');
   document.getElementById('tp-' + id).classList.add('active');
   if (id === 'vm') startVmRefresh();
-  if (id === 'an') {
-    // Render only the currently active sub-tab (canvas is now visible)
-    const activeSub = document.querySelector('.an-tp.active');
-    if (activeSub) _renderSubTab(activeSub.id.replace('an-', ''));
-  }
 }
 
 function showAnTab(id, btn) {
@@ -570,8 +536,6 @@ function showAnTab(id, btn) {
   document.querySelectorAll('.an-tp').forEach(p => p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('an-' + id).classList.add('active');
-  // Canvas is now visible — safe to render
-  _renderSubTab(id);
 }
 
 // Called by loadNodes — tracks actual worker count
@@ -864,47 +828,12 @@ function buildResultsPanel() {
   document.getElementById('res-panel').classList.add('show');
 }
 
-// ── Post-job: load analytics ────────────────────────────
+// ── Post-job: generate charts ───────────────────────────
 async function onJobComplete() {
-  // 1. build performance chart (has live stageTimes from this run)
   buildPerfChart();
-
-  // 2. download fresh parquet then update cached data
-  try {
-    appendLog('Downloading results from GCS…','l-plain');
-    await fetch('/api/refresh-results',{method:'POST'});
-    appendLog('Results downloaded. Loading analytics…','l-plain');
-    const d = await fetch('/api/results/analytics').then(r=>r.json());
-    if (d.error) { appendLog('Analytics error: '+d.error,'l-fail'); return; }
-
-    cachedAnalytics = d;
-
-    // Show NEW badge, clear CACHED badge and old-run banner
-    document.getElementById('an-badge').classList.add('show');
-    document.getElementById('an-cache-badge').style.display = 'none';
-    document.getElementById('last-run-banner').style.display = 'none';
-
-    // Render active sub-tab now if Analytics tab is visible
-    if (document.getElementById('tp-an').classList.contains('active')) {
-      const activeSub = document.querySelector('.an-tp.active');
-      if (activeSub) _renderSubTab(activeSub.id.replace('an-', ''));
-    }
-  } catch(e) {
-    appendLog('Analytics fetch error: '+e.message,'l-recv');
-  }
+  await refreshAnalytics();
 }
 
-// ── Per-sub-tab lazy renderer ─────────────────────────────────────────
-// Only renders when the canvas container is visible, preventing 0×0 renders.
-function _renderSubTab(id) {
-  if (!cachedAnalytics) return;
-  try {
-    if (id === 'funnel') buildFunnelCharts(cachedAnalytics.funnel);
-    if (id === 'attr')   buildAttrCharts(cachedAnalytics.attribution);
-    if (id === 'anom')   buildAnomCharts(cachedAnalytics.anomalies);
-    if (id === 'perf' && Object.keys(stageTimes).length > 0) buildPerfChart();
-  } catch(e) { console.error('Chart render error:', e); }
-}
 
 // ── Performance chart ───────────────────────────────────
 function buildPerfChart() {
@@ -937,141 +866,6 @@ function buildPerfChart() {
   ).join('');
 }
 
-// ── Funnel charts ───────────────────────────────────────
-function buildFunnelCharts(f) {
-  // Overall totals (sum of daily)
-  const totViews = f.daily.reduce((s,r)=>s+r.views,0);
-  const totCarts = f.daily.reduce((s,r)=>s+r.carts,0);
-  const totPurch = f.daily.reduce((s,r)=>s+r.purchases,0);
-
-  mkChart('c-funnel-tot','bar',
-    { labels:['Views','Carts','Purchases'],
-      datasets:[{data:[totViews,totCarts,totPurch],
-        backgroundColor:['#1f3a5c','#1a4731','#3d2a6e'],
-        borderColor:    ['#58a6ff','#3fb950','#bc8cff'],
-        borderWidth:1, borderRadius:4}] },
-    { plugins:{legend:{display:false}},
-      scales:{x:{ticks:{color:'#c9d1d9',font:{size:11}},grid:{display:false}},
-              y:{...mkLinearAxis('Sessions')}} });
-
-  // Daily conversion rates
-  const dates = f.daily.map(r=>r.date);
-  mkChart('c-conv','line',
-    { labels:dates,
-      datasets:[
-        {label:'View→Cart %', data:f.daily.map(r=>r.v2c), borderColor:'#58a6ff', backgroundColor:'rgba(88,166,255,.08)', tension:.3, pointRadius:2, fill:true},
-        {label:'Cart→Buy %',  data:f.daily.map(r=>r.c2p), borderColor:'#3fb950', backgroundColor:'rgba(63,185,80,.08)',  tension:.3, pointRadius:2, fill:true},
-      ]},
-    { scales:{x:{ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:10},grid:{color:'#21262d'}},
-              y:{...mkLinearAxis('%'),min:0}} });
-
-  // Device funnel
-  mkChart('c-dev-funnel','bar',
-    { labels: f.by_device.map(r=>r.device),
-      datasets:[
-        {label:'Views',    data:f.by_device.map(r=>r.views),    backgroundColor:'#1f3a5c',borderColor:'#58a6ff',borderWidth:1},
-        {label:'Carts',    data:f.by_device.map(r=>r.carts),    backgroundColor:'#1a4731',borderColor:'#3fb950',borderWidth:1},
-        {label:'Purchases',data:f.by_device.map(r=>r.purchases),backgroundColor:'#3d2a6e',borderColor:'#bc8cff',borderWidth:1},
-      ]},
-    { scales:{x:{ticks:{color:'#c9d1d9',font:{size:10}},grid:{display:false}},
-              y:{...mkLinearAxis('Sessions')}} });
-
-  // Top categories
-  mkChart('c-topcat','bar',
-    { labels:f.top_cat.map(r=>r.category_code.split('.').slice(-1)[0]),
-      datasets:[{data:f.top_cat.map(r=>r.purchases),
-        backgroundColor:'#1f3a5c', borderColor:'#58a6ff', borderWidth:1, borderRadius:3}] },
-    { indexAxis:'y', plugins:{legend:{display:false}},
-      scales:{x:{...mkLinearAxis('Purchases'),ticks:{color:'#8b949e',font:{size:9}}},
-              y:{ticks:{color:'#c9d1d9',font:{size:9}},grid:{display:false}}} });
-}
-
-// ── Attribution charts ──────────────────────────────────
-const REF_COLORS = {'google':'#4285F4','facebook':'#1877F2','instagram':'#E1306C',
-                    'email':'#e3b341','affiliate':'#3fb950','direct':'#8b949e'};
-function refColor(name) { return REF_COLORS[name]||'#58a6ff'; }
-
-function buildAttrCharts(a) {
-  // Orders by referrer (doughnut)
-  mkChart('c-attr-ref','doughnut',
-    { labels:a.by_referrer.map(r=>r.attributed_referrer),
-      datasets:[{data:a.by_referrer.map(r=>r.orders),
-        backgroundColor:a.by_referrer.map(r=>refColor(r.attributed_referrer)),
-        borderColor:'#1c2128',borderWidth:2}] },
-    { plugins:{legend:{position:'right',labels:{color:'#c9d1d9',font:{size:10}}}} });
-
-  // Revenue by referrer (bar)
-  mkChart('c-attr-rev','bar',
-    { labels:a.by_referrer.map(r=>r.attributed_referrer),
-      datasets:[{data:a.by_referrer.map(r=>r.revenue),
-        backgroundColor:a.by_referrer.map(r=>refColor(r.attributed_referrer)),
-        borderRadius:4,borderSkipped:false}] },
-    { plugins:{legend:{display:false}},
-      scales:{x:{ticks:{color:'#c9d1d9',font:{size:10}},grid:{display:false}},
-              y:{...mkLinearAxis('Revenue ($)')} } });
-
-  // Orders by device (doughnut)
-  mkChart('c-attr-dev','doughnut',
-    { labels:a.by_device.map(r=>r.attribution_device),
-      datasets:[{data:a.by_device.map(r=>r.orders),
-        backgroundColor:['#58a6ff','#3fb950','#bc8cff'],
-        borderColor:'#1c2128',borderWidth:2}] },
-    { plugins:{legend:{position:'right',labels:{color:'#c9d1d9',font:{size:10}}}} });
-
-  // Daily revenue line
-  mkChart('c-attr-daily','line',
-    { labels:a.rev_daily.map(r=>r.day),
-      datasets:[{label:'Revenue $', data:a.rev_daily.map(r=>r.revenue),
-        borderColor:'#e3b341',backgroundColor:'rgba(227,179,65,.1)',
-        tension:.3,pointRadius:2,fill:true}] },
-    { plugins:{legend:{display:false}},
-      scales:{x:{ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:10},grid:{color:'#21262d'}},
-              y:{...mkLinearAxis('Revenue ($)')} } });
-}
-
-// ── Anomaly charts ──────────────────────────────────────
-function buildAnomCharts(an) {
-  const dates = an.daily.map(r=>r.date);
-  const counts = an.daily.map(r=>r.purchase_count);
-  const avg    = an.daily.map(r=>r.rolling_avg);
-  const ptColors = an.daily.map(r=>r.is_anomaly ? '#f85149' : 'transparent');
-  const ptRadius = an.daily.map(r=>r.is_anomaly ? 6 : 2);
-
-  mkChart('c-anom-daily','line',
-    { labels:dates, datasets:[
-        { label:'Purchase Count', data:counts, borderColor:'#58a6ff',
-          backgroundColor:'rgba(88,166,255,.07)', tension:.3,
-          pointBackgroundColor:ptColors, pointRadius:ptRadius, fill:true },
-        { label:'7-day Rolling Avg', data:avg, borderColor:'#e3b341',
-          borderDash:[6,3], tension:.3, pointRadius:0, borderWidth:1.5 },
-      ]},
-    { scales:{x:{ticks:{color:'#8b949e',font:{size:9},maxTicksLimit:10},grid:{color:'#21262d'}},
-              y:{...mkLinearAxis('Purchases/day')}} });
-
-  // Category anomaly bar
-  mkChart('c-anom-cat','bar',
-    { labels:an.cat_summary.map(r=>r.category_code.split('.').slice(-1)[0]),
-      datasets:[{data:an.cat_summary.map(r=>r.anomaly_count),
-        backgroundColor:'rgba(248,81,73,.6)',borderColor:'#f85149',borderWidth:1,borderRadius:3}] },
-    { indexAxis:'y', plugins:{legend:{display:false}},
-      scales:{x:{...mkLinearAxis('Anomaly Count'),ticks:{color:'#8b949e',font:{size:9}}},
-              y:{ticks:{color:'#c9d1d9',font:{size:9}},grid:{display:false}}} });
-
-  // Anomaly explanations table
-  const rows = an.daily.filter(r=>r.is_anomaly && r.explanation);
-  document.getElementById('anom-table').innerHTML = `
-    <table style="width:100%;border-collapse:collapse">
-      <thead><tr>
-        <th style="text-align:left;padding:4px 6px;color:var(--muted);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--border)">Date</th>
-        <th style="text-align:left;padding:4px 6px;color:var(--muted);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--border)">Explanation</th>
-      </tr></thead>
-      <tbody>${rows.map(r=>`<tr>
-        <td style="padding:4px 6px;color:var(--red);font-family:monospace;font-size:10px;border-bottom:1px solid rgba(48,54,61,.3)">${r.date}</td>
-        <td style="padding:4px 6px;color:var(--text);font-size:10px;border-bottom:1px solid rgba(48,54,61,.3)">${r.explanation||''}</td>
-      </tr>`).join('')}</tbody>
-    </table>`;
-}
-
 // ── Log helpers ─────────────────────────────────────────
 function appendLog(txt, cls) {
   const con = document.getElementById('log-out');
@@ -1102,36 +896,59 @@ function setStatus(cls, txt) {
   el.className=cls; el.textContent=txt;
 }
 
-// ── Auto-load last run results on startup ───────────────
+// ── PNG chart helpers ───────────────────────────────────
+function _showChart(id, ph_id, src) {
+  const img = document.getElementById(id);
+  const ph  = document.getElementById(ph_id);
+  if (!img) return;
+  img.src     = src + '?t=' + Date.now();  // bust cache
+  img.style.display = 'block';
+  if (ph) ph.style.display = 'none';
+}
+
+function showCharts() {
+  _showChart('chart-funnel', 'ph-funnel', '/charts/funnel.png');
+  _showChart('chart-attr',   'ph-attr',   '/charts/attribution.png');
+  _showChart('chart-anom',   'ph-anom',   '/charts/anomalies.png');
+  document.getElementById('an-badge').classList.add('show');
+  document.getElementById('an-cache-badge').style.display = 'none';
+  document.getElementById('last-run-banner').style.display = 'none';
+}
+
+// ── Generate charts (called after pipeline OR manually) ─
+async function refreshAnalytics() {
+  const btn = document.getElementById('an-refresh-btn');
+  btn.textContent = '⏳ Generating…'; btn.disabled = true;
+  appendLog('Generating analytics charts from GCS results…', 'l-plain');
+  try {
+    const r = await fetch('/api/generate-charts', {method:'POST'});
+    const d = await r.json();
+    if (!r.ok || !d.ok) {
+      appendLog('Chart generation failed: ' + (d.error||'unknown'), 'l-fail');
+      btn.textContent = '✗ Error'; btn.disabled = false;
+      setTimeout(() => { btn.textContent = '↻ Generate Charts'; }, 3000);
+      return;
+    }
+    appendLog('Charts ready ✓', 'l-plain');
+    showCharts();
+    btn.textContent = '✓ Done'; btn.disabled = false;
+    setTimeout(() => { btn.textContent = '↻ Generate Charts'; }, 2000);
+  } catch(e) {
+    appendLog('Chart error: ' + e.message, 'l-recv');
+    btn.textContent = '✗ Error'; btn.disabled = false;
+    setTimeout(() => { btn.textContent = '↻ Generate Charts'; }, 2000);
+  }
+}
+
+// ── Auto-load charts on startup if already generated ────
 async function tryLoadLastResults() {
   try {
-    const info = await fetch('/api/last-run-info').then(r=>r.json());
-    if (!info.exists) return;
-
-    const d = await fetch('/api/results/analytics').then(r=>r.json());
-    if (d.error) return;
-
-    // Store data for deferred rendering
-    cachedAnalytics = d;
-
-    // Show CACHED badge and banner
-    document.getElementById('an-cache-badge').style.display = 'inline';
-    const banner = document.getElementById('last-run-banner');
-    banner.style.display = 'flex';
-    document.getElementById('last-run-txt').textContent =
-      `Showing results from last run (${info.human})`;
-
-    // Update performance tab empty-state to explain situation
-    document.getElementById('an-empty').innerHTML =
-      '<span class="ic">📂</span>' +
-      '<span class="msg">Previous run data loaded</span>' +
-      '<span class="ht">Switch to Funnel / Attribution / Anomalies tabs to see charts</span>' +
-      '<span class="ht" style="margin-top:4px">Run pipeline again for fresh performance timings</span>';
-
-    // If Analytics tab is already open, render the active sub-tab immediately
-    if (document.getElementById('tp-an').classList.contains('active')) {
-      const activeSub = document.querySelector('.an-tp.active');
-      if (activeSub) _renderSubTab(activeSub.id.replace('an-', ''));
+    const s = await fetch('/api/charts-status').then(r=>r.json());
+    if (s.ready) {
+      showCharts();
+      document.getElementById('an-cache-badge').style.display = 'inline';
+      document.getElementById('last-run-banner').style.display = 'flex';
+      document.getElementById('last-run-txt').textContent = 'Showing charts from last pipeline run';
     }
   } catch(_) {}
 }

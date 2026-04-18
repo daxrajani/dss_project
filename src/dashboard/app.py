@@ -4,7 +4,7 @@ COEN 6731 Distributed Systems · Concordia University
 Dax Rajani (40294118) & Harsh Ahuja (40301748)
 """
 
-from flask import Flask, render_template, Response, jsonify, stream_with_context, request
+from flask import Flask, render_template, Response, jsonify, stream_with_context, request, send_file
 import subprocess, json, os, re, math, requests, time, threading, shutil
 from datetime import datetime, timedelta, timezone
 
@@ -71,9 +71,12 @@ def _detect_cluster():
     return running or first or ""
 
 CLUSTER = _detect_cluster()
-INPUT   = os.environ.get("GCS_INPUT",   f"{BUCKET}/data/2019-Oct.csv")
+INPUT   = os.environ.get("GCS_INPUT",   f"{BUCKET}/data/full/2019-Oct.csv")
 SCRIPTS = os.environ.get("GCS_SCRIPTS", f"{BUCKET}/scripts")
 RESULTS_LOCAL = os.environ.get("DSS_RESULTS_DIR", "/tmp/dss_results")
+CHARTS_LOCAL  = os.environ.get("DSS_CHARTS_DIR",  "/tmp/dss_charts")
+CHARTS_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "dashboard_charts.py")
 
 MONITORING_BASE = "https://monitoring.googleapis.com/v3"
 
@@ -414,10 +417,12 @@ def refresh_results():
             "daily_anomalies", "category_anomalies"]
     errs = []
     for d in dirs:
+        local_dir = f"{RESULTS_LOCAL}/{d}"
+        os.makedirs(local_dir, exist_ok=True)
         r = subprocess.run(
             [GSUTIL, "-m", "rsync", "-r", "-d",
              f"{BUCKET}/results/demo_run/{d}/",
-             f"{RESULTS_LOCAL}/{d}/"],
+             f"{local_dir}/"],
             capture_output=True, text=True)
         if r.returncode != 0:
             errs.append(f"{d}: {r.stderr.strip()[:120]}")
@@ -534,6 +539,44 @@ def results_analytics():
     except Exception as e:
         import traceback
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
+# ── Chart generation (PNG) ────────────────────────────────────────────
+
+@app.route("/api/generate-charts", methods=["POST"])
+def generate_charts():
+    """Run dashboard_charts.py locally to produce PNG files from GCS parquet."""
+    os.makedirs(CHARTS_LOCAL, exist_ok=True)
+    python = shutil.which("python3") or shutil.which("python") or "python3"
+    r = subprocess.run(
+        [python, CHARTS_SCRIPT,
+         "--gcs-output", f"{BUCKET}/results/demo_run",
+         "--local-dir",  CHARTS_LOCAL],
+        capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        return jsonify({"ok": False, "error": r.stderr.strip()[-600:]}), 500
+    charts = [f for f in os.listdir(CHARTS_LOCAL) if f.endswith(".png")]
+    return jsonify({"ok": True, "charts": charts})
+
+
+@app.route("/api/charts-status")
+def charts_status():
+    """Return which PNG charts exist locally."""
+    names = ["funnel.png", "attribution.png", "anomalies.png"]
+    existing = [n for n in names
+                if os.path.isfile(os.path.join(CHARTS_LOCAL, n))]
+    return jsonify({"charts": existing, "ready": len(existing) == len(names)})
+
+
+@app.route("/charts/<name>")
+def serve_chart(name):
+    """Serve a PNG chart file."""
+    if not name.endswith(".png"):
+        return "Not found", 404
+    path = os.path.join(CHARTS_LOCAL, name)
+    if not os.path.isfile(path):
+        return "Chart not yet generated", 404
+    return send_file(path, mimetype="image/png")
 
 
 if __name__ == "__main__":
