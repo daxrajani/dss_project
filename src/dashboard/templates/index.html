@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSS Pipeline Dashboard — COEN 6731</title>
+<!-- Chart.js + date adapter -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+*  { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0d1117;
+  --surf:     #161b22;
+  --surf2:    #1c2128;
+  --border:   #30363d;
+  --text:     #c9d1d9;
+  --muted:    #8b949e;
+  --green:    #3fb950;
+  --gdim:     #1a4731;
+  --yellow:   #d29922;
+  --red:      #f85149;
+  --blue:     #58a6ff;
+  --bdim:     #1f3a5c;
+  --orange:   #e3b341;
+  --purple:   #bc8cff;
+}
+body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+       background:var(--bg); color:var(--text);
+       height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+/* ── Header ── */
+header {
+  background:var(--surf); border-bottom:1px solid var(--border);
+  padding:9px 18px; display:flex; align-items:center;
+  justify-content:space-between; flex-shrink:0;
+}
+.hd-title h1  { font-size:14px; font-weight:700; color:var(--blue); }
+.hd-title p   { font-size:11px; color:var(--muted); margin-top:2px; }
+.hd-badge {
+  display:flex; align-items:center; gap:8px;
+  background:var(--surf2); border:1px solid var(--border);
+  border-radius:6px; padding:5px 12px;
+}
+.hd-badge .dot { width:7px;height:7px;border-radius:50%;
+                  background:var(--green); animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+.hd-badge .cname { font-size:12px; font-weight:700; font-family:monospace; }
+.hd-badge .cst   { font-size:11px; color:var(--green); font-weight:700; }
+.hd-badge .czone { font-size:10px; color:var(--muted); }
+
+/* ── Layout ── */
+main {
+  display:grid; grid-template-columns:360px 1fr;
+  flex:1; overflow:hidden; min-height:0;
+}
+
+/* ── Left panel ── */
+.lp {
+  background:var(--surf); border-right:1px solid var(--border);
+  display:flex; flex-direction:column;
+  overflow-y:auto; padding:12px; gap:12px;
+}
+.sec-lbl {
+  font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:1.2px; color:var(--muted); margin-bottom:7px;
+}
+
+/* Node cards */
+.ng { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; }
+.nc {
+  background:var(--surf2); border:1px solid var(--border);
+  border-radius:7px; padding:9px 5px 7px; text-align:center;
+  transition:border-color .3s,opacity .3s;
+}
+.nc.run  { border-color:#1a4731; }
+.nc.mast { border-color:#3d2a6e; }
+.nc.stop { border-color:#4a1c1a; opacity:.6; }
+.nc.stpg { border-color:#4a3400; }
+
+.nc-ico  { font-size:16px; margin-bottom:2px; }
+.nc-name { font-size:9px; font-family:monospace; color:var(--muted); margin-bottom:2px; word-break:break-all; }
+.nc-role { font-size:10px; font-weight:700; margin-bottom:4px; }
+.nc-badge {
+  display:inline-block; font-size:8px; font-weight:700;
+  padding:1px 5px; border-radius:8px; margin-bottom:6px;
+}
+.b-RUNNING    { background:rgba(63,185,80,.15); color:var(--green); }
+.b-TERMINATED { background:rgba(248,81,73,.15);  color:var(--red); }
+.b-STOPPING   { background:rgba(210,153,34,.15); color:var(--yellow); }
+.b-STAGING    { background:rgba(88,166,255,.15); color:var(--blue); }
+
+.nc-btn {
+  font-size:9px; font-weight:700; padding:3px 7px;
+  border-radius:4px; border:1px solid; cursor:pointer;
+  background:transparent; transition:all .2s;
+}
+.btn-k { border-color:var(--red);   color:var(--red);   }
+.btn-k:hover { background:rgba(248,81,73,.15); }
+.btn-s { border-color:var(--green); color:var(--green); }
+.btn-s:hover { background:rgba(63,185,80,.15); }
+.nc-btn:disabled { opacity:.35; cursor:not-allowed; }
+
+/* ── Config panel ── */
+.cfg-box {
+  background:var(--surf2); border:1px solid var(--border);
+  border-radius:7px; padding:10px 11px;
+}
+.cfg-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.cfg-row:last-child { margin-bottom:0; }
+.cfg-lbl { font-size:10px; font-weight:700; text-transform:uppercase;
+           letter-spacing:.9px; color:var(--muted); min-width:58px; }
+.pills { display:flex; gap:4px; flex:1; flex-wrap:wrap; }
+.pill {
+  font-size:10px; font-weight:700; padding:3px 9px;
+  border-radius:12px; border:1px solid var(--border);
+  color:var(--muted); background:transparent; cursor:pointer;
+  transition:all .2s;
+}
+.pill:hover { border-color:var(--text); color:var(--text); }
+.pill.active  { border-color:var(--blue);   color:var(--blue);   background:var(--bdim); }
+.pill.current { border-color:var(--green);  color:var(--green);  background:var(--gdim); }
+.pill.unavail { opacity:.35; cursor:not-allowed; text-decoration:line-through; }
+#apply-btn {
+  font-size:10px; font-weight:700; padding:3px 9px;
+  border-radius:12px; border:1px solid var(--orange);
+  color:var(--orange); background:transparent; cursor:pointer;
+  transition:all .2s; white-space:nowrap;
+}
+#apply-btn:hover { background:rgba(227,179,65,.15); }
+#apply-btn:disabled { opacity:.4; cursor:not-allowed; }
+.cfg-note { font-size:10px; color:var(--muted); margin-top:4px; }
+
+/* Run button */
+#run-btn {
+  width:100%; padding:10px;
+  background:var(--blue); color:#000; border:none; border-radius:7px;
+  font-size:13px; font-weight:700; cursor:pointer; letter-spacing:.4px;
+  transition:background .2s;
+}
+#run-btn:hover:not(:disabled) { background:#79c0ff; }
+#run-btn:disabled { background:var(--border); color:var(--muted); cursor:not-allowed; }
+
+/* Stage list */
+.sl { display:flex; flex-direction:column; gap:4px; }
+.sr {
+  display:flex; align-items:center; gap:7px; padding:6px 9px;
+  background:var(--surf2); border:1px solid var(--border);
+  border-radius:5px; transition:border-color .3s;
+}
+.sr.act  { border-color:var(--blue); }
+.sr.done { border-color:var(--gdim); }
+.sr.fail { border-color:var(--red); }
+.sdot {
+  width:8px; height:8px; border-radius:50%; background:var(--border);
+  flex-shrink:0; transition:background .3s;
+}
+.sr.act  .sdot { background:var(--blue); animation:pulse .9s infinite; }
+.sr.done .sdot { background:var(--green); }
+.sr.fail .sdot { background:var(--red); }
+.sname { font-size:11px; flex:1; }
+.stime { font-size:10px; color:var(--muted); font-family:monospace; }
+.sr.done .stime { color:var(--green); }
+
+/* Results summary table */
+#res-panel { display:none; }
+#res-panel.show { display:block; }
+.rtbl { width:100%; border-collapse:collapse; font-size:11px; }
+.rtbl th { text-align:left; padding:4px 7px; background:var(--surf2);
+           color:var(--muted); font-size:9px; text-transform:uppercase;
+           letter-spacing:.5px; border-bottom:1px solid var(--border); }
+.rtbl td { padding:4px 7px; border-bottom:1px solid rgba(48,54,61,.4); }
+.rtbl td:last-child { text-align:right; font-family:monospace; color:var(--blue); }
+.rtbl tr.tot td { color:var(--green); font-weight:700; border-top:1px solid var(--border); }
+
+/* ── Right panel ── */
+.rp { display:flex; flex-direction:column; overflow:hidden; min-height:0; }
+
+/* Main tab bar */
+.tab-bar {
+  display:flex; background:var(--surf);
+  border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.tab-btn {
+  padding:9px 16px; font-size:12px; font-weight:600;
+  background:transparent; border:none; color:var(--muted);
+  cursor:pointer; border-bottom:2px solid transparent;
+  transition:color .2s;
+}
+.tab-btn.active { color:var(--blue); border-bottom-color:var(--blue); }
+.tab-btn:hover:not(.active) { color:var(--text); }
+.tab-btn .badge {
+  font-size:9px; background:var(--red); color:#fff;
+  border-radius:8px; padding:1px 5px; margin-left:4px; display:none;
+}
+.tab-btn .badge.show { display:inline; }
+
+/* Tab panels */
+.tab-panels { flex:1; overflow:hidden; min-height:0; display:flex; flex-direction:column; }
+.tp { display:none; flex:1; overflow:hidden; min-height:0; flex-direction:column; }
+.tp.active { display:flex; }
+
+/* ── Log tab ── */
+.log-bar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; border-bottom:1px solid var(--border); background:var(--surf2); flex-shrink:0;
+}
+.log-lbl { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
+#jstatus { font-size:11px; font-weight:600; padding:2px 8px; border-radius:8px; display:none; }
+#jstatus.run { display:inline; background:var(--bdim); color:var(--blue); }
+#jstatus.ok  { display:inline; background:var(--gdim); color:var(--green); }
+#jstatus.err { display:inline; background:rgba(248,81,73,.15); color:var(--red); }
+.log-actions { display:flex; gap:6px; }
+.lbtn { font-size:11px; padding:3px 9px; background:transparent;
+        border:1px solid var(--border); color:var(--muted);
+        border-radius:4px; cursor:pointer; }
+.lbtn:hover { border-color:var(--text); color:var(--text); }
+
+#log-out {
+  flex:1; overflow-y:auto; padding:9px 14px;
+  font-family:'Consolas','Monaco',monospace;
+  font-size:11.5px; line-height:1.65; background:var(--bg);
+}
+.ll { margin:0; white-space:pre-wrap; word-break:break-all; }
+.l-info  { color:#344158; font-size:10.5px; }
+.l-warn  { color:#6a4e15; font-size:10.5px; }
+.l-err   { color:#6a2520; font-size:10.5px; }
+.l-fail  { color:var(--red); font-size:11px; background:rgba(248,81,73,.07);
+           padding:1px 4px; border-radius:3px; border-left:2px solid var(--red); margin:1px 0; }
+.l-recv  { color:var(--yellow); }
+.l-stage { color:var(--blue); font-weight:700; }
+.l-sep   { color:#1e3028; }
+.l-summ  { color:var(--purple); }
+.l-tot   { color:var(--green); font-weight:700; }
+.l-res   { color:var(--text); }
+.l-plain { color:var(--muted); }
+
+#log-ph {
+  height:100%; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; color:var(--muted); gap:6px;
+}
+#log-ph .ic  { font-size:30px; }
+#log-ph .msg { font-size:13px; }
+#log-ph .ht  { font-size:11px; opacity:.5; }
+
+/* ── VM Metrics tab ── */
+.vm-charts {
+  flex:1; overflow-y:auto; padding:14px;
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:12px; background:var(--bg); align-content:start;
+}
+.chart-card {
+  background:var(--surf); border:1px solid var(--border);
+  border-radius:8px; padding:12px;
+}
+.chart-card h3 { font-size:11px; color:var(--muted); text-transform:uppercase;
+                 letter-spacing:.8px; margin-bottom:10px; }
+.chart-wrap { position:relative; height:160px; }
+.vm-refresh-bar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:6px 14px; border-bottom:1px solid var(--border);
+  background:var(--surf2); flex-shrink:0;
+}
+.vm-refresh-bar span { font-size:11px; color:var(--muted); }
+#vm-last-upd { font-size:11px; color:var(--muted); }
+
+/* ── Analytics tab ── */
+.an-tab-bar {
+  display:flex; background:var(--surf2);
+  border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.an-tab {
+  padding:7px 14px; font-size:11px; font-weight:600;
+  background:transparent; border:none; color:var(--muted);
+  cursor:pointer; border-bottom:2px solid transparent; transition:color .2s;
+}
+.an-tab.active { color:var(--purple); border-bottom-color:var(--purple); }
+.an-tab:hover:not(.active) { color:var(--text); }
+
+.an-panels { flex:1; overflow:hidden; min-height:0; display:flex; flex-direction:column; }
+.an-tp { display:none; flex:1; overflow-y:auto; padding:14px; background:var(--bg); flex-direction:column; gap:12px; }
+.an-tp.active { display:flex; }
+
+.an-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.an-grid.wide { grid-template-columns:1fr; }
+.cc {
+  background:var(--surf); border:1px solid var(--border);
+  border-radius:8px; padding:12px;
+}
+.cc h3 { font-size:11px; color:var(--muted); text-transform:uppercase;
+         letter-spacing:.8px; margin-bottom:10px; }
+.cc-wrap { position:relative; height:200px; }
+.cc-wrap.tall { height:260px; }
+
+#an-empty {
+  height:100%; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; color:var(--muted); gap:8px;
+}
+#an-empty .ic { font-size:28px; }
+#an-empty .msg { font-size:13px; }
+
+/* ── Metrics bar ── */
+#mbar { display:none; border-top:1px solid var(--border); background:var(--surf); flex-shrink:0; }
+#mbar.show { display:flex; }
+.mc { flex:1; text-align:center; padding:7px 4px; border-right:1px solid var(--border); }
+.mc:last-child { border-right:none; }
+.mv { font-size:14px; font-weight:700; font-family:monospace; color:var(--blue); }
+.mv.g { color:var(--green); }
+.ml { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px; margin-top:1px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="hd-title">
+    <h1>DSS Pipeline Dashboard</h1>
+    <p>COEN 6731 Distributed Systems &nbsp;·&nbsp; Concordia University &nbsp;·&nbsp; Dax Rajani &amp; Harsh Ahuja</p>
+  </div>
+  <div class="hd-badge">
+    <div class="dot"></div>
+    <span class="cname">{{ cluster }}</span>
+    <span class="cst">RUNNING</span>
+    <span class="czone">{{ zone }}</span>
+  </div>
+</header>
+
+<main>
+<!-- ── Left Panel ──────────────────────────────────────── -->
+<aside class="lp">
+
+  <div>
+    <div class="sec-lbl">Cluster Nodes</div>
+    <div class="ng" id="ng">
+      <div style="grid-column:1/-1;text-align:center;color:var(--muted);font-size:12px;padding:14px 0;">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Config panel -->
+  <div>
+    <div class="sec-lbl">Job Configuration</div>
+    <div class="cfg-box">
+      <!-- Workers -->
+      <div class="cfg-row">
+        <span class="cfg-lbl">Workers</span>
+        <div class="pills" id="worker-pills">
+          <button class="pill" data-w="1" onclick="selWorker(1,this)">1</button>
+          <button class="pill" data-w="2" onclick="selWorker(2,this)">2</button>
+          <button class="pill" data-w="3" onclick="selWorker(3,this)">3</button>
+          <button class="pill" data-w="4" onclick="selWorker(4,this)">4</button>
+          <button class="pill" data-w="5" onclick="selWorker(5,this)">5</button>
+        </div>
+        <button id="apply-btn" onclick="resizeCluster()" style="display:none">Apply</button>
+      </div>
+      <!-- Data size -->
+      <div class="cfg-row">
+        <span class="cfg-lbl">Data Size</span>
+        <div class="pills" id="size-pills">
+          <button class="pill" data-f="0.10" onclick="selSize(0.10,this)">~500 MB</button>
+          <button class="pill active" data-f="0.20" onclick="selSize(0.20,this)">~1 GB</button>
+          <button class="pill" data-f="0.50" onclick="selSize(0.50,this)">~2.5 GB</button>
+          <button class="pill" data-f="1.00" onclick="selSize(1.00,this)">5.3 GB</button>
+        </div>
+      </div>
+      <div class="cfg-note" id="cfg-note">5 workers · ~1 GB · n1-standard-2</div>
+    </div>
+  </div>
+
+  <button id="run-btn" onclick="submitJob()">▶ &nbsp;Run Full Pipeline</button>
+
+  <div>
+    <div class="sec-lbl">Pipeline Stages</div>
+    <div class="sl">
+      <div class="sr" id="s-etl">   <div class="sdot"></div><span class="sname">1 · ETL &amp; Enrichment</span>    <span class="stime" id="t-etl">—</span></div>
+      <div class="sr" id="s-sess">  <div class="sdot"></div><span class="sname">2 · Sessionization</span>         <span class="stime" id="t-sess">—</span></div>
+      <div class="sr" id="s-fun">   <div class="sdot"></div><span class="sname">3 · Funnel Analysis</span>         <span class="stime" id="t-fun">—</span></div>
+      <div class="sr" id="s-attr">  <div class="sdot"></div><span class="sname">4 · Last-Touch Attribution</span>  <span class="stime" id="t-attr">—</span></div>
+      <div class="sr" id="s-anom">  <div class="sdot"></div><span class="sname">5 · Anomaly Detection</span>       <span class="stime" id="t-anom">—</span></div>
+    </div>
+  </div>
+
+  <div id="res-panel">
+    <div class="sec-lbl">Pipeline Summary</div>
+    <table class="rtbl" style="margin-bottom:10px"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody id="t-metrics"></tbody></table>
+    <table class="rtbl"><thead><tr><th>Stage</th><th>Time</th></tr></thead><tbody id="t-timing"></tbody></table>
+  </div>
+
+</aside>
+
+<!-- ── Right Panel ─────────────────────────────────────── -->
+<section class="rp">
+
+  <!-- Main tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="showTab('log',this)">📋 Live Log</button>
+    <button class="tab-btn" onclick="showTab('vm',this)">📊 VM Metrics</button>
+    <button class="tab-btn" id="an-tab-btn" onclick="showTab('an',this)">📈 Analytics <span class="badge" id="an-badge">NEW</span><span class="badge" id="an-cache-badge" style="background:var(--yellow);display:none">CACHED</span></button>
+  </div>
+
+  <div class="tab-panels">
+
+    <!-- LOG TAB -->
+    <div class="tp active" id="tp-log">
+      <div class="log-bar">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="log-lbl">Live Log</span>
+          <span id="jstatus">Idle</span>
+        </div>
+        <div class="log-actions">
+          <button class="lbtn" onclick="toggleSpark()">Toggle Spark logs</button>
+          <button class="lbtn" onclick="clearLog()">Clear</button>
+        </div>
+      </div>
+      <div id="log-out">
+        <div id="log-ph">
+          <span class="ic">🖥</span>
+          <span class="msg">No job running</span>
+          <span class="ht">Click "Run Full Pipeline" to start</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- VM METRICS TAB -->
+    <div class="tp" id="tp-vm">
+      <div class="vm-refresh-bar">
+        <span>CPU &amp; Disk metrics · auto-refresh every 30s</span>
+        <span id="vm-last-upd">—</span>
+      </div>
+      <div class="vm-charts">
+        <div class="chart-card" style="grid-column:1/-1">
+          <h3>CPU Utilization — All VMs (%)</h3>
+          <div class="chart-wrap" style="height:220px"><canvas id="c-cpu"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Disk Write Throughput (KB/s)</h3>
+          <div class="chart-wrap"><canvas id="c-disk"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>VM Status Summary</h3>
+          <div class="chart-wrap"><canvas id="c-vmstatus"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANALYTICS TAB -->
+    <div class="tp" id="tp-an">
+      <div id="last-run-banner" style="display:none;padding:6px 14px;font-size:11px;
+           background:rgba(210,153,34,.1);border-bottom:1px solid rgba(210,153,34,.3);
+           color:var(--yellow);display:none;align-items:center;justify-content:space-between;flex-shrink:0">
+        <span id="last-run-txt">Showing results from previous run</span>
+        <span style="opacity:.7">Run pipeline again for fresh data</span>
+      </div>
+      <div class="an-tab-bar">
+        <button class="an-tab active" onclick="showAnTab('perf',this)">⏱ Performance</button>
+        <button class="an-tab" onclick="showAnTab('funnel',this)">🔻 Funnel</button>
+        <button class="an-tab" onclick="showAnTab('attr',this)">🔗 Attribution</button>
+        <button class="an-tab" onclick="showAnTab('anom',this)">⚠ Anomalies</button>
+      </div>
+      <div class="an-panels">
+
+        <!-- PERFORMANCE -->
+        <div class="an-tp active" id="an-perf">
+          <div id="an-empty" style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:6px">
+            <span class="ic">⏳</span>
+            <span class="msg">Run the pipeline first</span>
+          </div>
+          <div id="perf-content" style="display:none">
+            <div class="an-grid">
+              <div class="cc" style="grid-column:1/-1">
+                <h3>Stage Execution Times (seconds)</h3>
+                <div class="cc-wrap"><canvas id="c-perf"></canvas></div>
+              </div>
+            </div>
+            <div class="an-grid" id="perf-metrics-grid" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <!-- FUNNEL -->
+        <div class="an-tp" id="an-funnel">
+          <div class="an-grid">
+            <div class="cc" style="grid-column:1/-1">
+              <h3>Overall Funnel — Views → Carts → Purchases (Oct 2019)</h3>
+              <div class="cc-wrap"><canvas id="c-funnel-tot"></canvas></div>
+            </div>
+          </div>
+          <div class="an-grid">
+            <div class="cc">
+              <h3>Daily Conversion Rates (%)</h3>
+              <div class="cc-wrap tall"><canvas id="c-conv"></canvas></div>
+            </div>
+            <div class="cc">
+              <h3>Conversion by Device</h3>
+              <div class="cc-wrap tall"><canvas id="c-dev-funnel"></canvas></div>
+            </div>
+          </div>
+          <div class="an-grid">
+            <div class="cc" style="grid-column:1/-1">
+              <h3>Top 10 Categories by Purchases</h3>
+              <div class="cc-wrap"><canvas id="c-topcat"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ATTRIBUTION -->
+        <div class="an-tp" id="an-attr">
+          <div class="an-grid">
+            <div class="cc">
+              <h3>Orders by Referrer</h3>
+              <div class="cc-wrap"><canvas id="c-attr-ref"></canvas></div>
+            </div>
+            <div class="cc">
+              <h3>Revenue by Referrer ($)</h3>
+              <div class="cc-wrap"><canvas id="c-attr-rev"></canvas></div>
+            </div>
+          </div>
+          <div class="an-grid">
+            <div class="cc">
+              <h3>Orders by Device</h3>
+              <div class="cc-wrap"><canvas id="c-attr-dev"></canvas></div>
+            </div>
+            <div class="cc">
+              <h3>Daily Revenue Over Time ($)</h3>
+              <div class="cc-wrap"><canvas id="c-attr-daily"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ANOMALIES -->
+        <div class="an-tp" id="an-anom">
+          <div class="an-grid wide">
+            <div class="cc">
+              <h3>Daily Purchase Count + Rolling Avg — Anomalies Highlighted</h3>
+              <div class="cc-wrap tall"><canvas id="c-anom-daily"></canvas></div>
+            </div>
+          </div>
+          <div class="an-grid">
+            <div class="cc">
+              <h3>Top Categories with Most Anomalies</h3>
+              <div class="cc-wrap"><canvas id="c-anom-cat"></canvas></div>
+            </div>
+            <div class="cc">
+              <h3>Anomaly Explanations</h3>
+              <div id="anom-table" style="overflow-y:auto;max-height:200px;font-size:11px;"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /tab-panels -->
+
+  <!-- Metrics bar (bottom) -->
+  <div id="mbar">
+    <div class="mc"><div class="mv" id="m-rows">—</div><div class="ml">Input Rows</div></div>
+    <div class="mc"><div class="mv" id="m-ord">—</div><div class="ml">Orders</div></div>
+    <div class="mc"><div class="mv" id="m-sess">—</div><div class="ml">Sessions</div></div>
+    <div class="mc"><div class="mv" id="m-attr">—</div><div class="ml">Attributed</div></div>
+    <div class="mc"><div class="mv" id="m-anom">—</div><div class="ml">Anomalies</div></div>
+    <div class="mc"><div class="mv g" id="m-time">—</div><div class="ml">Total Time</div></div>
+  </div>
+
+</section>
+</main>
+
+<!-- ═══════════════════════  JS  ═══════════════════════ -->
+<script>
+// ── State ──────────────────────────────────────────────
+let sse = null;
+let logBuf = [];
+let hideSpark = true;
+let activeStage = null;
+let stageTimes = {};
+let vmRefreshTimer = null;
+let charts = {};
+let currentWorkers = 0;    // actual running worker count from cluster
+let selectedWorkers = 0;   // what user has clicked (0 = unset)
+let selFraction = 0.20;
+let cachedAnalytics = null;       // last fetched analytics data
+let resizePollTimer = null;
+const SIZE_LABELS = {0.10:'~500 MB',0.20:'~1 GB',0.50:'~2.5 GB',1.00:'5.3 GB'};
+
+// ── Tab navigation ─────────────────────────────────────
+function showTab(id, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tp').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tp-' + id).classList.add('active');
+  if (id === 'vm') startVmRefresh();
+  if (id === 'an') {
+    // Render only the currently active sub-tab (canvas is now visible)
+    const activeSub = document.querySelector('.an-tp.active');
+    if (activeSub) _renderSubTab(activeSub.id.replace('an-', ''));
+  }
+}
+
+function showAnTab(id, btn) {
+  document.querySelectorAll('.an-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.an-tp').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('an-' + id).classList.add('active');
+  // Canvas is now visible — safe to render
+  _renderSubTab(id);
+}
+
+// ── Config panel ───────────────────────────────────────
+
+function selWorker(n, btn) {
+  selectedWorkers = n;
+  _refreshWorkerPillStyles();
+  // Show Apply only if selection differs from current
+  const applyBtn = document.getElementById('apply-btn');
+  applyBtn.style.display = (selectedWorkers !== currentWorkers) ? 'inline-block' : 'none';
+  updateCfgNote();
+}
+
+function selSize(f, btn) {
+  selFraction = f;
+  document.querySelectorAll('#size-pills .pill').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  updateCfgNote();
+}
+
+function updateCfgNote() {
+  const w = currentWorkers || '?';
+  const sel = selectedWorkers && selectedWorkers !== currentWorkers ? ` → ${selectedWorkers}` : '';
+  document.getElementById('cfg-note').textContent =
+    `${w}${sel} worker${w!==1?'s':''} · ${SIZE_LABELS[selFraction]||Math.round(selFraction*100)+'%'} · n1-standard-2`;
+}
+
+function _refreshWorkerPillStyles() {
+  document.querySelectorAll('#worker-pills .pill').forEach(p => {
+    const w = parseInt(p.dataset.w);
+    p.classList.remove('current','active');
+    if (w === currentWorkers)  p.classList.add('current');
+    if (w === selectedWorkers && selectedWorkers !== currentWorkers) p.classList.add('active');
+  });
+}
+
+// Called by loadNodes — syncs pill display to actual cluster state
+function syncWorkerPills(nodes) {
+  const wCount = nodes.filter(n => n.type==='worker' && n.status==='RUNNING').length;
+  if (wCount < 1) return;
+  currentWorkers  = wCount;
+  if (!selectedWorkers) selectedWorkers = wCount; // first load
+  _refreshWorkerPillStyles();
+  // Hide Apply if selection now matches current
+  const applyBtn = document.getElementById('apply-btn');
+  if (selectedWorkers === currentWorkers) applyBtn.style.display = 'none';
+  updateCfgNote();
+}
+
+async function resizeCluster() {
+  const btn = document.getElementById('apply-btn');
+  btn.disabled = true; btn.textContent = `Applying ${selectedWorkers}w…`;
+  appendLog(`Requesting resize to ${selectedWorkers} workers (takes ~2 min)…`, 'l-recv');
+
+  try {
+    const r = await fetch('/api/resize', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({workers: selectedWorkers})});
+    const d = await r.json();
+    if (!d.ok) {
+      appendLog('Resize request failed: '+(d.error||'unknown'), 'l-fail');
+      btn.disabled=false; btn.textContent='Apply';
+      return;
+    }
+  } catch(e) {
+    appendLog('Resize error: '+e.message, 'l-fail');
+    btn.disabled=false; btn.textContent='Apply';
+    return;
+  }
+
+  // Poll resize-status until done or failed
+  if (resizePollTimer) clearInterval(resizePollTimer);
+  const target = selectedWorkers;
+
+  resizePollTimer = setInterval(async () => {
+    try {
+      const st = await fetch('/api/resize-status').then(r=>r.json());
+
+      if (st.status === 'done') {
+        clearInterval(resizePollTimer);
+        appendLog(`✓ Cluster resized to ${target} workers successfully.`, 'l-tot');
+        btn.style.display = 'none';
+        btn.disabled = false; btn.textContent = 'Apply';
+        loadNodes();
+
+      } else if (st.status === 'failed') {
+        clearInterval(resizePollTimer);
+        btn.disabled = false; btn.textContent = 'Apply';
+
+        if (st.error_type === 'capacity') {
+          appendLog(`Zone capacity insufficient for ${target} workers. Try a smaller number.`, 'l-fail');
+        } else {
+          appendLog(`Resize failed: ${st.error}`, 'l-fail');
+        }
+        // Revert selection to current — fetch actual count from cluster first
+        try {
+          const ci = await fetch('/api/cluster-workers').then(r=>r.json());
+          if (ci.workers > 0) currentWorkers = ci.workers;
+        } catch(_) {}
+        selectedWorkers = currentWorkers;
+        _refreshWorkerPillStyles();
+        btn.style.display = 'none';
+        loadNodes();
+      }
+      // else still "running" — keep polling
+    } catch(_) {}
+  }, 5000);
+}
+
+// ── Node cards ──────────────────────────────────────────
+async function loadNodes() {
+  try {
+    const nodes = await fetch('/api/nodes').then(r => r.json());
+    renderNodes(nodes);
+    syncWorkerPills(nodes);
+    renderVmStatusChart(nodes);
+  } catch(_) {}
+}
+
+function renderNodes(nodes) {
+  const g = document.getElementById('ng');
+  if (!nodes.length) { g.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--muted);font-size:11px;padding:12px">No nodes</div>'; return; }
+  nodes.sort((a,b) => a.type === 'master' ? -1 : b.type === 'master' ? 1 : a.name.localeCompare(b.name));
+  g.innerHTML = nodes.map(n => {
+    const m = n.type === 'master';
+    const run = n.status === 'RUNNING';
+    const ic = run ? (m ? 'var(--purple)' : 'var(--green)') : 'var(--red)';
+    const cc = m ? 'mast' : run ? 'run' : n.status === 'STOPPING' ? 'stpg' : 'stop';
+    const sh = n.name.replace(/^dss-demo-5w-1gb-/, '');
+    const btn = m ? '<div style="height:18px"></div>' :
+      (run ? `<button class="nc-btn btn-k" onclick="killVM('${n.name}',this)">Kill VM</button>`
+           : `<button class="nc-btn btn-s" onclick="startVM('${n.name}',this)">Start</button>`);
+    return `<div class="nc ${cc}">
+      <div class="nc-ico" style="color:${ic}">▣</div>
+      <div class="nc-name">${sh}</div>
+      <div class="nc-role" style="color:${ic}">${m?'MASTER':'WORKER'}</div>
+      <div class="nc-badge b-${n.status}">${n.status}</div>
+      ${btn}
+    </div>`;
+  }).join('');
+}
+
+async function killVM(name, btn) {
+  if (!confirm(`Stop "${name}"?\n\nSpark will detect the failure and auto-recover — perfect for demonstrating fault tolerance!`)) return;
+  btn.disabled = true; btn.textContent = '…';
+  const d = await fetch('/api/stop/'+name, {method:'POST'}).then(r=>r.json());
+  if (d.ok) appendLog(`⚡ Kill VM requested: ${name} — watch Spark recover!`, 'l-recv');
+  else { appendLog('ERROR: '+d.msg, 'l-fail'); btn.disabled=false; btn.textContent='Kill VM'; }
+  setTimeout(loadNodes, 4000);
+  setTimeout(loadNodes, 12000);
+}
+
+async function startVM(name, btn) {
+  btn.disabled = true; btn.textContent = '…';
+  await fetch('/api/start/'+name, {method:'POST'});
+  appendLog('▷ Start requested: '+name, 'l-res');
+  setTimeout(loadNodes, 6000);
+}
+
+// ── VM Metrics ──────────────────────────────────────────
+const VM_COLORS = ['#58a6ff','#3fb950','#bc8cff','#e3b341','#f85149','#79c0ff'];
+
+function mkChart(id, type, data, opts) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {type, data, options: {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:'#c9d1d9',font:{size:10}}}},
+    scales:{},
+    ...opts
+  }});
+  return charts[id];
+}
+
+function mkTimeAxis(extra={}) {
+  return { type:'time', time:{unit:'minute'}, ticks:{color:'#8b949e',font:{size:9}}, grid:{color:'#21262d'}, ...extra };
+}
+function mkLinearAxis(label='', extra={}) {
+  return { beginAtZero:true, ticks:{color:'#8b949e',font:{size:9}}, grid:{color:'#21262d'}, title:{display:!!label,text:label,color:'#8b949e',font:{size:9}}, ...extra };
+}
+
+async function loadVmMetrics() {
+  try {
+    const d = await fetch('/api/vm-metrics').then(r=>r.json());
+    document.getElementById('vm-last-upd').textContent = 'Updated: '+new Date().toLocaleTimeString();
+    renderCpuChart(d.cpu || {});
+    renderDiskChart(d.disk || {});
+  } catch(e) {
+    document.getElementById('vm-last-upd').textContent = 'Error fetching metrics';
+  }
+}
+
+function renderCpuChart(cpu) {
+  const keys = Object.keys(cpu).sort((a,b)=>a.localeCompare(b));
+  const datasets = keys.map((name,i) => ({
+    label: name,
+    data: (cpu[name]||[]).map(p=>({x:p.t, y:p.v})),
+    borderColor: VM_COLORS[i % VM_COLORS.length],
+    backgroundColor: 'transparent',
+    tension: 0.3, pointRadius: 2, borderWidth: 2,
+  }));
+  mkChart('c-cpu','line',
+    {datasets},
+    {scales:{x:mkTimeAxis(),y:{...mkLinearAxis('CPU %'),min:0,max:100}},
+     plugins:{legend:{labels:{color:'#c9d1d9',font:{size:10}}}},
+     animation:false});
+}
+
+function renderDiskChart(disk) {
+  const keys = Object.keys(disk).sort((a,b)=>a.localeCompare(b));
+  const datasets = keys.map((name,i) => ({
+    label: name,
+    data: (disk[name]||[]).map(p=>({x:p.t, y:p.v})),
+    borderColor: VM_COLORS[i % VM_COLORS.length],
+    backgroundColor: 'transparent',
+    tension: 0.3, pointRadius: 2, borderWidth: 1.5,
+  }));
+  mkChart('c-disk','line',
+    {datasets},
+    {scales:{x:mkTimeAxis(),y:mkLinearAxis('KB/s')},
+     plugins:{legend:{labels:{color:'#c9d1d9',font:{size:9}}}},
+     animation:false});
+}
+
+function renderVmStatusChart(nodes) {
+  const counts = {RUNNING:0, TERMINATED:0, STOPPING:0, STAGING:0};
+  nodes.forEach(n => { counts[n.status] = (counts[n.status]||0)+1; });
+  const labels = Object.keys(counts).filter(k=>counts[k]>0);
+  const colMap = {RUNNING:'#3fb950',TERMINATED:'#f85149',STOPPING:'#d29922',STAGING:'#58a6ff'};
+  mkChart('c-vmstatus','doughnut',
+    { labels, datasets:[{data:labels.map(l=>counts[l]),
+        backgroundColor:labels.map(l=>colMap[l]),
+        borderColor:'#1c2128', borderWidth:2}] },
+    { plugins:{legend:{position:'bottom',labels:{color:'#c9d1d9',font:{size:10}}}} });
+}
+
+function startVmRefresh() {
+  loadVmMetrics();
+  if (!vmRefreshTimer) vmRefreshTimer = setInterval(loadVmMetrics, 30000);
+}
+
+// ── Job submission ──────────────────────────────────────
+async function submitJob() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true; btn.textContent = '⏳ Submitting…';
+  clearLog(); resetStages();
+  setStatus('run','⚙ Running');
+  document.getElementById('res-panel').classList.remove('show');
+  document.getElementById('mbar').classList.remove('show');
+  document.getElementById('an-badge').classList.remove('show');
+  stageTimes = {};
+
+  try {
+    const r = await fetch('/api/submit',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({fraction: selFraction})});
+    const d = await r.json();
+    if (!r.ok || d.error) {
+      appendLog('Submit error: '+(d.error||'unknown'), 'l-fail');
+      btn.disabled=false; btn.textContent='▶ Run Full Pipeline';
+      setStatus('err','✗ Failed'); return;
+    }
+    btn.textContent = '⚙ Running…';
+    appendLog('Job submitted → '+d.job_id, 'l-summ');
+    appendLog('Waiting for Dataproc to schedule…','l-plain');
+    openStream(d.job_id);
+  } catch(e) {
+    appendLog('Error: '+e.message,'l-fail');
+    btn.disabled=false; btn.textContent='▶ Run Full Pipeline';
+    setStatus('err','✗ Error');
+  }
+}
+
+// ── SSE log stream ──────────────────────────────────────
+function openStream(jobId) {
+  if (sse) sse.close();
+  sse = new EventSource('/api/logs/'+jobId);
+  sse.onmessage = function(ev) {
+    const d = JSON.parse(ev.data);
+    if (d.done) {
+      sse.close();
+      const btn = document.getElementById('run-btn');
+      btn.disabled=false; btn.textContent='▶ Run Full Pipeline';
+      if (d.status==='SUCCESS') {
+        setStatus('ok','✓ Completed');
+        appendLog('','l-sep');
+        appendLog('✓ Pipeline completed successfully!','l-tot');
+        buildResultsPanel();
+        onJobComplete();
+      } else {
+        setStatus('err','✗ Failed');
+        appendLog('✗ Job failed or cancelled.','l-fail');
+      }
+      return;
+    }
+    if (d.line) {
+      const line = d.line;
+      logBuf.push(line);
+      const cls = classLine(line);
+      const isNoise = cls==='l-info'||cls==='l-warn'||cls==='l-err';
+      if (!hideSpark || !isNoise) appendLog(line, cls);
+      trackProgress(line);
+    }
+  };
+  sse.onerror = function() {
+    if (sse.readyState !== EventSource.CLOSED)
+      appendLog('Log stream connection lost','l-recv');
+  };
+}
+
+// ── Line classifier ─────────────────────────────────────
+function classLine(l) {
+  if (/^\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} INFO/.test(l))  return 'l-info';
+  if (/^\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} WARN/.test(l))  return 'l-warn';
+  if (/^\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} ERROR/.test(l)) {
+    if (/Lost executor|bad node|Container.*fail/i.test(l)) return 'l-fail';
+    return 'l-err';
+  }
+  if (/FetchFailed|UnknownHostException|ExecutorLostFailure/.test(l)) return 'l-fail';
+  if (/Requesting driver to remove executor|Lost task|marked as failed/.test(l)) return 'l-recv';
+  if (/^>>>/.test(l))                return 'l-stage';
+  if (/={10,}/.test(l))             return 'l-sep';
+  if (/TOTAL PIPELINE TIME/.test(l)) return 'l-tot';
+  if (/PIPELINE SUMMARY|Stage \d/.test(l)) return 'l-summ';
+  return 'l-res';
+}
+
+// ── Stage & metric tracking ─────────────────────────────
+const STAGES = [
+  {id:'etl',  start:/\[ETL/,     done:/ETL total:\s*([\d.]+)s/},
+  {id:'sess', start:/\[SESSION]/,done:/events with session_id.*\(([\d.]+)s\)/},
+  {id:'fun',  start:/\[FUNNEL/,  done:/Funnel Parquet written.*\(([\d.]+)s\)/},
+  {id:'attr', start:/\[ATTR/,    done:/Attribution Parquet written.*\(([\d.]+)s\)/},
+  {id:'anom', start:/\[ANOM/,    done:/Anomaly Parquet written.*\(([\d.]+)s\)/},
+];
+
+function trackProgress(l) {
+  for (const s of STAGES) {
+    if (s.start.test(l) && activeStage !== s.id) {
+      if (activeStage) setStage(activeStage,'done');
+      setStage(s.id,'act'); activeStage=s.id;
+    }
+    const m = l.match(s.done);
+    if (m) { stageTimes[s.id]=parseFloat(m[1]); setStage(s.id,'done',m[1]+'s'); if(activeStage===s.id) activeStage=null; }
+  }
+  grab(l,/Input rows\s+([\d,]+)/,         'm-rows');
+  grab(l,/Orders derived\s+([\d,]+)/,      'm-ord');
+  grab(l,/Sessions \(events\)\s+([\d,]+)/, 'm-sess');
+  grab(l,/Orders attributed\s+([\d,]+)/,   'm-attr');
+  grab(l,/System anomalies flagged\s+([\d,]+)/,'m-anom');
+  const tot = l.match(/TOTAL PIPELINE TIME\s+([\d.]+)s/);
+  if (tot) { stageTimes._total=parseFloat(tot[1]); document.getElementById('m-time').textContent=tot[1]+'s'; document.getElementById('mbar').classList.add('show'); }
+}
+
+function grab(l, re, id) { const m=l.match(re); if(m) document.getElementById(id).textContent=m[1]; }
+
+function setStage(id, cls, time) {
+  const el=document.getElementById('s-'+id); if(!el) return;
+  el.className='sr '+cls;
+  if(time) document.getElementById('t-'+id).textContent=time;
+}
+function resetStages() {
+  ['etl','sess','fun','attr','anom'].forEach(id => {
+    const el=document.getElementById('s-'+id); if(el) el.className='sr';
+    const t=document.getElementById('t-'+id); if(t) t.textContent='—';
+  });
+  activeStage=null;
+}
+
+// ── Results panel (left sidebar) ────────────────────────
+function buildResultsPanel() {
+  const metrics={}, timing={};
+  let inSum=false;
+  for(const l of logBuf) {
+    if(/PIPELINE SUMMARY/.test(l)){inSum=true;continue;}
+    if(!inSum) continue;
+    if(/^-+$/.test(l.trim())) continue;
+    const mr=l.match(/^\s{1,3}([\w\s(),-\/]+?)\s{2,}([\d,]+)\s*$/);
+    if(mr&&!/Stage/.test(l)&&!/TOTAL/.test(l)) metrics[mr[1].trim()]=mr[2].trim();
+    const sr=l.match(/Stage \d+\s+(.+?)\s{2,}([\d.]+s)/);
+    if(sr) timing[sr[1].trim()]=sr[2].trim();
+    const tr=l.match(/TOTAL PIPELINE TIME\s+([\d.]+s)/);
+    if(tr) timing['TOTAL PIPELINE TIME']=tr[1];
+  }
+  document.getElementById('t-metrics').innerHTML=
+    Object.entries(metrics).filter(([k])=>!k.startsWith('--')).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+  document.getElementById('t-timing').innerHTML=
+    Object.entries(timing).map(([k,v])=>`<tr class="${k.includes('TOTAL')?'tot':''}"><td>${k}</td><td>${v}</td></tr>`).join('');
+  document.getElementById('res-panel').classList.add('show');
+}
+
+// ── Post-job: load analytics ────────────────────────────
+async function onJobComplete() {
+  // 1. build performance chart (has live stageTimes from this run)
+  buildPerfChart();
+
+  // 2. download fresh parquet then update cached data
+  try {
+    appendLog('Downloading results from GCS…','l-plain');
+    await fetch('/api/refresh-results',{method:'POST'});
+    appendLog('Results downloaded. Loading analytics…','l-plain');
+    const d = await fetch('/api/results/analytics').then(r=>r.json());
+    if (d.error) { appendLog('Analytics error: '+d.error,'l-fail'); return; }
+
+    cachedAnalytics = d;
+
+    // Show NEW badge, clear CACHED badge and old-run banner
+    document.getElementById('an-badge').classList.add('show');
+    document.getElementById('an-cache-badge').style.display = 'none';
+    document.getElementById('last-run-banner').style.display = 'none';
+
+    // Render active sub-tab now if Analytics tab is visible
+    if (document.getElementById('tp-an').classList.contains('active')) {
+      const activeSub = document.querySelector('.an-tp.active');
+      if (activeSub) _renderSubTab(activeSub.id.replace('an-', ''));
+    }
+  } catch(e) {
+    appendLog('Analytics fetch error: '+e.message,'l-recv');
+  }
+}
+
+// ── Per-sub-tab lazy renderer ─────────────────────────────────────────
+// Only renders when the canvas container is visible, preventing 0×0 renders.
+function _renderSubTab(id) {
+  if (!cachedAnalytics) return;
+  try {
+    if (id === 'funnel') buildFunnelCharts(cachedAnalytics.funnel);
+    if (id === 'attr')   buildAttrCharts(cachedAnalytics.attribution);
+    if (id === 'anom')   buildAnomCharts(cachedAnalytics.anomalies);
+    if (id === 'perf' && Object.keys(stageTimes).length > 0) buildPerfChart();
+  } catch(e) { console.error('Chart render error:', e); }
+}
+
+// ── Performance chart ───────────────────────────────────
+function buildPerfChart() {
+  const map = {ETL:stageTimes.etl, Sessionization:stageTimes.sess,
+               Funnel:stageTimes.fun, Attribution:stageTimes.attr, Anomaly:stageTimes.anom};
+  const labels = Object.keys(map).filter(k=>map[k]);
+  const vals   = labels.map(k=>map[k]);
+  const cols   = ['#58a6ff','#3fb950','#bc8cff','#e3b341','#e3b341'];
+
+  document.getElementById('an-empty').style.display='none';
+  document.getElementById('perf-content').style.display='block';
+
+  mkChart('c-perf','bar',
+    {labels, datasets:[{data:vals, backgroundColor:cols.slice(0,labels.length),
+      borderRadius:4, borderSkipped:false}]},
+    {indexAxis:'y', plugins:{legend:{display:false}},
+     scales:{x:{...mkLinearAxis('Seconds'),ticks:{color:'#8b949e',font:{size:9}}},
+             y:{ticks:{color:'#c9d1d9',font:{size:10}}, grid:{display:false}}}});
+
+  // Metric cards
+  const total = stageTimes._total;
+  const cards = [
+    {l:'Total Pipeline',v:(total||0).toFixed(1)+'s', c:'var(--green)'},
+    {l:'ETL Stage',     v:(stageTimes.etl||0).toFixed(1)+'s'},
+    {l:'Sessionization',v:(stageTimes.sess||0).toFixed(1)+'s'},
+    {l:'Attribution',   v:(stageTimes.attr||0).toFixed(1)+'s'},
+  ];
+  document.getElementById('perf-metrics-grid').innerHTML = cards.map(c=>
+    `<div class="cc"><div style="font-size:22px;font-weight:700;font-family:monospace;color:${c.c||'var(--blue)'};text-align:center;padding:8px 0">${c.v}</div><div style="font-size:10px;color:var(--muted);text-align:center;text-transform:uppercase;letter-spacing:.8px">${c.l}</div></div>`
+  ).join('');
+}
+
+// ── Funnel charts ───────────────────────────────────────
+function buildFunnelCharts(f) {
+  // Overall totals (sum of daily)
+  const totViews = f.daily.reduce((s,r)=>s+r.views,0);
+  const totCarts = f.daily.reduce((s,r)=>s+r.carts,0);
+  const totPurch = f.daily.reduce((s,r)=>s+r.purchases,0);
+
+  mkChart('c-funnel-tot','bar',
+    { labels:['Views','Carts','Purchases'],
+      datasets:[{data:[totViews,totCarts,totPurch],
+        backgroundColor:['#1f3a5c','#1a4731','#3d2a6e'],
+        borderColor:    ['#58a6ff','#3fb950','#bc8cff'],
+        borderWidth:1, borderRadius:4}] },
+    { plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:'#c9d1d9',font:{size:11}},grid:{display:false}},
+              y:{...mkLinearAxis('Sessions')}} });
+
+  // Daily conversion rates
+  const dates = f.daily.map(r=>r.date);
+  mkChart('c-conv','line',
+    { labels:dates,
+      datasets:[
+        {label:'View→Cart %', data:f.daily.map(r=>r.v2c), borderColor:'#58a6ff', backgroundColor:'rgba(88,166,255,.08)', tension:.3, pointRadius:2, fill:true},
+        {label:'Cart→Buy %',  data:f.daily.map(r=>r.c2p), borderColor:'#3fb950', backgroundColor:'rgba(63,185,80,.08)',  tension:.3, pointRadius:2, fill:true},
+      ]},
+    { scales:{x:{ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:10},grid:{color:'#21262d'}},
+              y:{...mkLinearAxis('%'),min:0}} });
+
+  // Device funnel
+  mkChart('c-dev-funnel','bar',
+    { labels: f.by_device.map(r=>r.device),
+      datasets:[
+        {label:'Views',    data:f.by_device.map(r=>r.views),    backgroundColor:'#1f3a5c',borderColor:'#58a6ff',borderWidth:1},
+        {label:'Carts',    data:f.by_device.map(r=>r.carts),    backgroundColor:'#1a4731',borderColor:'#3fb950',borderWidth:1},
+        {label:'Purchases',data:f.by_device.map(r=>r.purchases),backgroundColor:'#3d2a6e',borderColor:'#bc8cff',borderWidth:1},
+      ]},
+    { scales:{x:{ticks:{color:'#c9d1d9',font:{size:10}},grid:{display:false}},
+              y:{...mkLinearAxis('Sessions')}} });
+
+  // Top categories
+  mkChart('c-topcat','bar',
+    { labels:f.top_cat.map(r=>r.category_code.split('.').slice(-1)[0]),
+      datasets:[{data:f.top_cat.map(r=>r.purchases),
+        backgroundColor:'#1f3a5c', borderColor:'#58a6ff', borderWidth:1, borderRadius:3}] },
+    { indexAxis:'y', plugins:{legend:{display:false}},
+      scales:{x:{...mkLinearAxis('Purchases'),ticks:{color:'#8b949e',font:{size:9}}},
+              y:{ticks:{color:'#c9d1d9',font:{size:9}},grid:{display:false}}} });
+}
+
+// ── Attribution charts ──────────────────────────────────
+const REF_COLORS = {'google':'#4285F4','facebook':'#1877F2','instagram':'#E1306C',
+                    'email':'#e3b341','affiliate':'#3fb950','direct':'#8b949e'};
+function refColor(name) { return REF_COLORS[name]||'#58a6ff'; }
+
+function buildAttrCharts(a) {
+  // Orders by referrer (doughnut)
+  mkChart('c-attr-ref','doughnut',
+    { labels:a.by_referrer.map(r=>r.attributed_referrer),
+      datasets:[{data:a.by_referrer.map(r=>r.orders),
+        backgroundColor:a.by_referrer.map(r=>refColor(r.attributed_referrer)),
+        borderColor:'#1c2128',borderWidth:2}] },
+    { plugins:{legend:{position:'right',labels:{color:'#c9d1d9',font:{size:10}}}} });
+
+  // Revenue by referrer (bar)
+  mkChart('c-attr-rev','bar',
+    { labels:a.by_referrer.map(r=>r.attributed_referrer),
+      datasets:[{data:a.by_referrer.map(r=>r.revenue),
+        backgroundColor:a.by_referrer.map(r=>refColor(r.attributed_referrer)),
+        borderRadius:4,borderSkipped:false}] },
+    { plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:'#c9d1d9',font:{size:10}},grid:{display:false}},
+              y:{...mkLinearAxis('Revenue ($)')} } });
+
+  // Orders by device (doughnut)
+  mkChart('c-attr-dev','doughnut',
+    { labels:a.by_device.map(r=>r.attribution_device),
+      datasets:[{data:a.by_device.map(r=>r.orders),
+        backgroundColor:['#58a6ff','#3fb950','#bc8cff'],
+        borderColor:'#1c2128',borderWidth:2}] },
+    { plugins:{legend:{position:'right',labels:{color:'#c9d1d9',font:{size:10}}}} });
+
+  // Daily revenue line
+  mkChart('c-attr-daily','line',
+    { labels:a.rev_daily.map(r=>r.day),
+      datasets:[{label:'Revenue $', data:a.rev_daily.map(r=>r.revenue),
+        borderColor:'#e3b341',backgroundColor:'rgba(227,179,65,.1)',
+        tension:.3,pointRadius:2,fill:true}] },
+    { plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:10},grid:{color:'#21262d'}},
+              y:{...mkLinearAxis('Revenue ($)')} } });
+}
+
+// ── Anomaly charts ──────────────────────────────────────
+function buildAnomCharts(an) {
+  const dates = an.daily.map(r=>r.date);
+  const counts = an.daily.map(r=>r.purchase_count);
+  const avg    = an.daily.map(r=>r.rolling_avg);
+  const ptColors = an.daily.map(r=>r.is_anomaly ? '#f85149' : 'transparent');
+  const ptRadius = an.daily.map(r=>r.is_anomaly ? 6 : 2);
+
+  mkChart('c-anom-daily','line',
+    { labels:dates, datasets:[
+        { label:'Purchase Count', data:counts, borderColor:'#58a6ff',
+          backgroundColor:'rgba(88,166,255,.07)', tension:.3,
+          pointBackgroundColor:ptColors, pointRadius:ptRadius, fill:true },
+        { label:'7-day Rolling Avg', data:avg, borderColor:'#e3b341',
+          borderDash:[6,3], tension:.3, pointRadius:0, borderWidth:1.5 },
+      ]},
+    { scales:{x:{ticks:{color:'#8b949e',font:{size:9},maxTicksLimit:10},grid:{color:'#21262d'}},
+              y:{...mkLinearAxis('Purchases/day')}} });
+
+  // Category anomaly bar
+  mkChart('c-anom-cat','bar',
+    { labels:an.cat_summary.map(r=>r.category_code.split('.').slice(-1)[0]),
+      datasets:[{data:an.cat_summary.map(r=>r.anomaly_count),
+        backgroundColor:'rgba(248,81,73,.6)',borderColor:'#f85149',borderWidth:1,borderRadius:3}] },
+    { indexAxis:'y', plugins:{legend:{display:false}},
+      scales:{x:{...mkLinearAxis('Anomaly Count'),ticks:{color:'#8b949e',font:{size:9}}},
+              y:{ticks:{color:'#c9d1d9',font:{size:9}},grid:{display:false}}} });
+
+  // Anomaly explanations table
+  const rows = an.daily.filter(r=>r.is_anomaly && r.explanation);
+  document.getElementById('anom-table').innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="text-align:left;padding:4px 6px;color:var(--muted);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--border)">Date</th>
+        <th style="text-align:left;padding:4px 6px;color:var(--muted);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--border)">Explanation</th>
+      </tr></thead>
+      <tbody>${rows.map(r=>`<tr>
+        <td style="padding:4px 6px;color:var(--red);font-family:monospace;font-size:10px;border-bottom:1px solid rgba(48,54,61,.3)">${r.date}</td>
+        <td style="padding:4px 6px;color:var(--text);font-size:10px;border-bottom:1px solid rgba(48,54,61,.3)">${r.explanation||''}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+}
+
+// ── Log helpers ─────────────────────────────────────────
+function appendLog(txt, cls) {
+  const con = document.getElementById('log-out');
+  const ph  = document.getElementById('log-ph');
+  if (ph) ph.remove();
+  const p = document.createElement('p');
+  p.className='ll '+(cls||'l-plain');
+  p.textContent=txt;
+  con.appendChild(p);
+  con.scrollTop=con.scrollHeight;
+}
+
+function clearLog() {
+  logBuf=[];
+  document.getElementById('log-out').innerHTML=
+    '<div id="log-ph"><span class="ic">🖥</span><span class="msg">Log cleared</span></div>';
+}
+
+function toggleSpark() {
+  hideSpark=!hideSpark;
+  document.querySelectorAll('.l-info,.l-warn,.l-err').forEach(e=>{
+    e.style.display = hideSpark ? 'none' : '';
+  });
+}
+
+function setStatus(cls, txt) {
+  const el=document.getElementById('jstatus');
+  el.className=cls; el.textContent=txt;
+}
+
+// ── Auto-load last run results on startup ───────────────
+async function tryLoadLastResults() {
+  try {
+    const info = await fetch('/api/last-run-info').then(r=>r.json());
+    if (!info.exists) return;
+
+    const d = await fetch('/api/results/analytics').then(r=>r.json());
+    if (d.error) return;
+
+    // Store data for deferred rendering
+    cachedAnalytics = d;
+
+    // Show CACHED badge and banner
+    document.getElementById('an-cache-badge').style.display = 'inline';
+    const banner = document.getElementById('last-run-banner');
+    banner.style.display = 'flex';
+    document.getElementById('last-run-txt').textContent =
+      `Showing results from last run (${info.human})`;
+
+    // Update performance tab empty-state to explain situation
+    document.getElementById('an-empty').innerHTML =
+      '<span class="ic">📂</span>' +
+      '<span class="msg">Previous run data loaded</span>' +
+      '<span class="ht">Switch to Funnel / Attribution / Anomalies tabs to see charts</span>' +
+      '<span class="ht" style="margin-top:4px">Run pipeline again for fresh performance timings</span>';
+
+    // If Analytics tab is already open, render the active sub-tab immediately
+    if (document.getElementById('tp-an').classList.contains('active')) {
+      const activeSub = document.querySelector('.an-tp.active');
+      if (activeSub) _renderSubTab(activeSub.id.replace('an-', ''));
+    }
+  } catch(_) {}
+}
+
+// ── Init ────────────────────────────────────────────────
+loadNodes();
+setInterval(loadNodes, 8000);
+tryLoadLastResults();
+</script>
+</body>
+</html>

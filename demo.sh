@@ -13,7 +13,7 @@
 PYTHON="$HOME/google-cloud-sdk/platform/bundledpythonunix/bin/python3"
 GCLOUD="$HOME/google-cloud-sdk/bin/gcloud"
 GSUTIL="$HOME/google-cloud-sdk/bin/gsutil"
-CLUSTER="dss-bench-2w-10gb-14824"
+CLUSTER="dss-demo-5w-1gb"
 REGION="us-central1"
 PROJECT="project-a0b2f7d8-d4bf-4557-923"
 INPUT="gs://dss-project-dax/data/full/2019-Oct.csv"
