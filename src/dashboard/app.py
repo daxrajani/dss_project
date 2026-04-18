@@ -45,8 +45,32 @@ def _gcloud_config(key):
 PROJECT = os.environ.get("GCP_PROJECT", "") or _gcloud_config("project")
 REGION  = os.environ.get("GCP_REGION",  "") or _gcloud_config("compute/region") or "us-central1"
 ZONE    = os.environ.get("GCP_ZONE",    "") or _gcloud_config("compute/zone")   or "us-central1-f"
-CLUSTER = os.environ.get("DATAPROC_CLUSTER", "")
 BUCKET  = os.environ.get("GCS_BUCKET",  "")
+
+def _detect_cluster():
+    """Auto-detect cluster: prefer DATAPROC_CLUSTER env var, then find first
+    RUNNING cluster in the project, then any cluster."""
+    if os.environ.get("DATAPROC_CLUSTER"):
+        return os.environ["DATAPROC_CLUSTER"]
+    proj_flag = f"--project={PROJECT}" if PROJECT else ""
+    r = subprocess.run(
+        [c for c in [GCLOUD, "dataproc", "clusters", "list",
+         f"--region={REGION}", proj_flag,
+         "--format=value(clusterName,status.state)"] if c],
+        capture_output=True, text=True)
+    running = first = None
+    for line in r.stdout.strip().splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        name, state = parts[0], (parts[1] if len(parts) > 1 else "")
+        if first is None:
+            first = name
+        if state == "RUNNING" and running is None:
+            running = name
+    return running or first or ""
+
+CLUSTER = _detect_cluster()
 INPUT   = os.environ.get("GCS_INPUT",   f"{BUCKET}/data/2019-Oct.csv")
 SCRIPTS = os.environ.get("GCS_SCRIPTS", f"{BUCKET}/scripts")
 RESULTS_LOCAL = os.environ.get("DSS_RESULTS_DIR", "/tmp/dss_results")
