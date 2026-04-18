@@ -55,10 +55,18 @@ _gcp_setup() {
 # ── Region fallback list — tried in order until one has capacity ──────────────
 _FALLBACK_REGIONS=(
     "us-central1" "us-east1" "us-east4" "us-west1" "us-west2"
-    "europe-west1" "europe-west4" "asia-east1"
+    "europe-west1" "europe-west4" "asia-east1" "asia-southeast1"
 )
 
+# Try e2 first (most available), fall back to n2
+_FALLBACK_MACHINE_TYPES=("e2-standard-2" "n2-standard-2" "n1-standard-2")
+
 _pf() { [[ -n "$PROJECT" ]] && echo "--project=$PROJECT" || echo ""; }
+
+_is_resource_error() {
+    echo "$1" | grep -qiE \
+        "does not have enough resources|UNAVAILABLE|RESOURCE_EXHAUSTED|quota exceeded|insufficient|no more resources"
+}
 
 # Find cluster across all regions → prints "REGION STATE" or "NOT_FOUND"
 _find_cluster() {
@@ -73,29 +81,39 @@ _find_cluster() {
     echo "NOT_FOUND"
 }
 
-# Create cluster, trying each region until one has resources
+# Create cluster — tries every region × machine type until something works
 _create_cluster() {
-    local name="$1"; shift
-    local extra_args=("$@")
-    for r in "${_FALLBACK_REGIONS[@]}"; do
-        echo -e "${GREEN}  Trying region ${r} ...${RESET}"
-        local out
-        out=$($GCLOUD dataproc clusters create "$name" \
-            --region="$r" $(_pf) "${extra_args[@]}" 2>&1)
-        local code=$?
-        if [[ $code -eq 0 ]]; then
-            REGION="$r"
-            echo -e "${GREEN}  Cluster created in ${REGION}.${RESET}"
-            return 0
-        elif echo "$out" | grep -qiE \
-            "does not have enough resources|UNAVAILABLE|RESOURCE_EXHAUSTED|quota exceeded|insufficient"; then
-            echo -e "${YELLOW}  Region ${r} out of resources — trying next ...${RESET}"
-        else
-            echo "$out"
-            return $code
-        fi
+    local name="$1" workers="$2"
+    for mtype in "${_FALLBACK_MACHINE_TYPES[@]}"; do
+        for r in "${_FALLBACK_REGIONS[@]}"; do
+            echo -e "${GREEN}  Trying ${r} / ${mtype} ...${RESET}"
+            local out
+            out=$($GCLOUD dataproc clusters create "$name" \
+                --region="$r" $(_pf) \
+                --master-machine-type="$mtype" \
+                --master-boot-disk-size=50GB \
+                --num-workers="$workers" \
+                --worker-machine-type="$mtype" \
+                --worker-boot-disk-size=50GB \
+                --image-version=2.1-debian11 \
+                --optional-components=JUPYTER \
+                --enable-component-gateway \
+                2>&1)
+            local code=$?
+            if [[ $code -eq 0 ]]; then
+                REGION="$r"
+                MACHINE_TYPE="$mtype"
+                echo -e "${GREEN}  Cluster created in ${REGION} (${MACHINE_TYPE}).${RESET}"
+                return 0
+            elif _is_resource_error "$out"; then
+                echo -e "${YELLOW}    No capacity — trying next ...${RESET}"
+            else
+                echo "$out"
+                return $code
+            fi
+        done
     done
-    echo "ERROR: No region had available resources." >&2
+    echo -e "${YELLOW}ERROR: Could not create cluster — all regions and machine types exhausted.${RESET}" >&2
     return 1
 }
 
@@ -112,24 +130,22 @@ demo_cloud() {
     echo -e "${YELLOW}Project  :${RESET} $PROJECT"
     echo -e "${YELLOW}Bucket   :${RESET} $BUCKET"
     echo -e "${YELLOW}Cluster  :${RESET} $CLUSTER"
-    echo -e "${YELLOW}Workers  :${RESET} 5 x n2-standard-2"
+    echo -e "${YELLOW}Workers  :${RESET} 5"
     echo -e "${YELLOW}Data     :${RESET} $INPUT"
     echo -e "${YELLOW}Sample   :${RESET} 20%  (~8.5M rows)"
     echo -e "${YELLOW}Output   :${RESET} $BUCKET/results/demo_run"
     echo ""
 
     # ── Ensure cluster is running ────────────────────────────────────────
+    REGION=""
     FOUND=$(_find_cluster "$CLUSTER")
 
     if [[ "$FOUND" == "NOT_FOUND" ]]; then
-        echo -e "${GREEN}Cluster not found — creating (auto-selecting region)...${RESET}"
-        _create_cluster "$CLUSTER" \
-            --master-machine-type=n2-standard-2 \
-            --num-workers=5 \
-            --worker-machine-type=n2-standard-2 \
-            --image-version=2.1-debian11 \
-            --optional-components=JUPYTER \
-            --enable-component-gateway
+        echo -e "${GREEN}Cluster not found — creating (trying all regions + machine types)...${RESET}"
+        if ! _create_cluster "$CLUSTER" 5; then
+            echo -e "${YELLOW}Could not create cluster. Try again later or check GCP quota.${RESET}"
+            exit 1
+        fi
     elif [[ "$FOUND" =~ ^([^ ]+)\ STOPPED$ ]]; then
         REGION="${BASH_REMATCH[1]}"
         echo -e "${GREEN}Cluster found STOPPED in ${REGION} — starting...${RESET}"
@@ -140,7 +156,7 @@ demo_cloud() {
         echo -e "${GREEN}Cluster already RUNNING in ${REGION} — reusing.${RESET}"
     else
         REGION=$(echo "$FOUND" | awk '{print $1}')
-        echo -e "${GREEN}Cluster is in state $(echo "$FOUND" | awk '{print $2}') in ${REGION}.${RESET}"
+        echo -e "${GREEN}Cluster is $(echo "$FOUND" | awk '{print $2}') in ${REGION}.${RESET}"
     fi
 
     echo -e "${CYAN}Region   : ${REGION}${RESET}\n"

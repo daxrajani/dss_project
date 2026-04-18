@@ -27,17 +27,12 @@ IMAGE_VERSION="2.1-debian11"
 CLUSTER_NAME="dss-bench-${WORKERS}w-${DATA_VARIANT}"
 RESULTS_DIR="results"
 
-# ── Region fallback list — tried in order until one has capacity ──────────────
+# ── Region + machine type fallback lists ─────────────────────────────────────
 FALLBACK_REGIONS=(
-    "us-central1"
-    "us-east1"
-    "us-east4"
-    "us-west1"
-    "us-west2"
-    "europe-west1"
-    "europe-west4"
-    "asia-east1"
+    "us-central1" "us-east1" "us-east4" "us-west1" "us-west2"
+    "europe-west1" "europe-west4" "asia-east1" "asia-southeast1"
 )
+FALLBACK_MACHINE_TYPES=("e2-standard-2" "n2-standard-2" "n1-standard-2")
 
 mkdir -p "${RESULTS_DIR}"
 LOG_FILE="${RESULTS_DIR}/cloud_${WORKERS}w_${DATA_VARIANT}.log"
@@ -64,7 +59,12 @@ echo "================================================================"
 
 _pf() { [[ -n "$PROJECT" ]] && echo "--project=$PROJECT" || echo ""; }
 
-# ── Find cluster in any region, return "region state" or "NOT_FOUND" ─────────
+_is_resource_error() {
+    echo "$1" | grep -qiE \
+        "does not have enough resources|UNAVAILABLE|RESOURCE_EXHAUSTED|quota exceeded|insufficient|no more resources"
+}
+
+# ── Find cluster in any region → prints "region state" or "NOT_FOUND" ────────
 _find_cluster() {
     for r in "${FALLBACK_REGIONS[@]}"; do
         state=$(gcloud dataproc clusters describe "${CLUSTER_NAME}" \
@@ -78,39 +78,38 @@ _find_cluster() {
     echo "NOT_FOUND"
 }
 
-# ── Create cluster, trying each region until one succeeds ─────────────────────
+# ── Create cluster — tries every machine type × region until one works ────────
 _create_cluster() {
-    for r in "${FALLBACK_REGIONS[@]}"; do
-        echo "[$(date '+%H:%M:%S')] Trying region ${r} ..."
-        output=$(gcloud dataproc clusters create "${CLUSTER_NAME}" \
-            --region="$r" $(_pf) \
-            --master-machine-type="${MASTER_TYPE}" \
-            --master-boot-disk-size=50GB \
-            --num-workers="${WORKERS}" \
-            --worker-machine-type="${WORKER_TYPE}" \
-            --worker-boot-disk-size=50GB \
-            --image-version="${IMAGE_VERSION}" \
-            --optional-components=JUPYTER \
-            --enable-component-gateway \
-            2>&1)
-        exit_code=$?
-
-        if [[ $exit_code -eq 0 ]]; then
-            echo "$output" | tee -a "${LOG_FILE}"
-            REGION="$r"
-            echo "[$(date '+%H:%M:%S')] Cluster created in region ${REGION}."
-            return 0
-        elif echo "$output" | grep -qiE \
-            "does not have enough resources|UNAVAILABLE|RESOURCE_EXHAUSTED|quota exceeded|insufficient"; then
-            echo "  Region ${r} has insufficient resources — trying next region ..."
-            echo "$output" >> "${LOG_FILE}"
-        else
-            # Unrelated error — fail immediately
-            echo "$output" | tee -a "${LOG_FILE}"
-            return $exit_code
-        fi
+    for mtype in "${FALLBACK_MACHINE_TYPES[@]}"; do
+        for r in "${FALLBACK_REGIONS[@]}"; do
+            echo "[$(date '+%H:%M:%S')] Trying ${r} / ${mtype} ..."
+            output=$(gcloud dataproc clusters create "${CLUSTER_NAME}" \
+                --region="$r" $(_pf) \
+                --master-machine-type="$mtype" \
+                --master-boot-disk-size=50GB \
+                --num-workers="${WORKERS}" \
+                --worker-machine-type="$mtype" \
+                --worker-boot-disk-size=50GB \
+                --image-version="${IMAGE_VERSION}" \
+                --optional-components=JUPYTER \
+                --enable-component-gateway \
+                2>&1)
+            exit_code=$?
+            if [[ $exit_code -eq 0 ]]; then
+                echo "$output" | tee -a "${LOG_FILE}"
+                REGION="$r"
+                echo "[$(date '+%H:%M:%S')] Cluster created in ${REGION} (${mtype})."
+                return 0
+            elif _is_resource_error "$output"; then
+                echo "  No capacity — trying next ..."
+                echo "$output" >> "${LOG_FILE}"
+            else
+                echo "$output" | tee -a "${LOG_FILE}"
+                return $exit_code
+            fi
+        done
     done
-    echo "ERROR: Could not create cluster in any region. All regions exhausted." | tee -a "${LOG_FILE}"
+    echo "ERROR: No region/machine type had available capacity." | tee -a "${LOG_FILE}"
     return 1
 }
 
@@ -119,7 +118,10 @@ FOUND=$(_find_cluster)
 
 if [[ "$FOUND" == "NOT_FOUND" ]]; then
     echo "[$(date '+%H:%M:%S')] Cluster not found — creating ..."
-    _create_cluster
+    if ! _create_cluster; then
+        echo "ERROR: Cluster creation failed. Check GCP quota or try again later."
+        exit 1
+    fi
 
 elif [[ "$FOUND" =~ ^([^ ]+)\ STOPPED$ ]]; then
     REGION="${BASH_REMATCH[1]}"
