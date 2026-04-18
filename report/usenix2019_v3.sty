@@ -1,0 +1,66 @@
+% USENIX 2019 style file -- v3
+% Based on the official USENIX conference proceedings format
+
+\typeout{USENIX 2019 format v3.1}
+
+% Use Times Roman font family
+\usepackage{mathptmx}
+\usepackage[scaled=.90]{helvet}
+\usepackage{courier}
+\usepackage[T1]{fontenc}
+
+% Page geometry: 7" text width, 9.25" text height on 8.5x11" paper
+\setlength\paperheight{11in}
+\setlength\paperwidth{8.5in}
+\setlength{\textwidth}{7.0in}
+\setlength{\textheight}{9.25in}
+\setlength{\oddsidemargin}{-0.25in}
+\setlength{\evensidemargin}{-0.25in}
+\setlength{\topmargin}{-0.5in}
+\setlength{\headheight}{12pt}
+\setlength{\headsep}{12pt}
+
+% Column separation
+\setlength{\columnsep}{0.33in}
+
+% No page numbers
+\pagestyle{empty}
+
+% Paragraph spacing
+\setlength{\parskip}{0pt}
+\setlength{\parsep}{0pt}
+\setlength{\topsep}{0pt}
+\setlength{\partopsep}{0pt}
+
+% Section title formatting
+\usepackage{titlesec}
+\titleformat{\section}{\normalfont\large\bfseries\scshape}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\itshape}{\thesubsubsection}{1em}{}
+\titlespacing*{\section}{0pt}{6pt plus 2pt minus 1pt}{3pt plus 1pt}
+\titlespacing*{\subsection}{0pt}{4pt plus 1pt minus 1pt}{2pt plus 1pt}
+\titlespacing*{\subsubsection}{0pt}{3pt plus 1pt}{1pt}
+
+% Caption formatting
+\usepackage{caption}
+\captionsetup{font=small, labelfont=bf, skip=4pt}
+
+% Abstract formatting
+\renewenvironment{abstract}{%
+  \centerline{\large\bfseries Abstract}%
+  \vspace{0.5ex}%
+  \begin{quote}\small
+}{%
+  \end{quote}%
+  \vspace{1ex}%
+}
+
+% Compact itemize/enumerate
+\usepackage{enumitem}
+\setlist{noitemsep, topsep=2pt, parsep=0pt, partopsep=0pt}
+
+% Hyperref for clickable refs
+\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}
+
+% Microtype for better text layout
+\usepackage{microtype}

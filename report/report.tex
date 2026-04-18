@@ -1,31 +1,24 @@
 \documentclass[letterpaper,twocolumn,10pt]{article}
+\usepackage{usenix2019_v3}
 
-% ── USENIX-compatible formatting ─────────────────────────────────────────────
-\usepackage[margin=1in,top=0.75in,bottom=1in]{geometry}
-\usepackage{times}
-\usepackage{microtype}
+% Additional packages
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{multirow}
 \usepackage{url}
 \usepackage{amsmath}
-\usepackage{enumitem}
 \usepackage{xcolor}
-\usepackage{caption}
 \usepackage{subcaption}
 \usepackage{tikz}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{shapes.geometric, arrows.standard, positioning, fit, backgrounds}
 
-\setlength{\columnsep}{0.25in}
 \setlength{\parskip}{2pt}
 \setlength{\parindent}{1em}
 
-\captionsetup{font=small, labelfont=bf}
-
-% ── TikZ styles ───────────────────────────────────────────────────────────────
+% TikZ styles
 \tikzset{
   box/.style={rectangle, rounded corners=3pt, draw=black!70, fill=#1,
               text width=1.5cm, align=center, minimum height=0.7cm, font=\tiny\bfseries},
@@ -34,7 +27,6 @@
   boxg/.style={box=green!15},
   boxo/.style={box=orange!15},
   boxr/.style={box=red!12},
-  boxyellow/.style={box=yellow!20},
   arr/.style={->, thick, >=stealth},
   dasharr/.style={->, dashed, thick, >=stealth, gray},
   label/.style={font=\tiny, align=center},
@@ -43,7 +35,7 @@
   modarrow/.style={->, >=stealth, thick, black!60},
 }
 
-% ── Title ─────────────────────────────────────────────────────────────────────
+% ── Title ────────────────────────────────────────────────────────────────────
 \title{\Large \bf Distributed E-commerce Analytics:\\
 A PySpark Pipeline on GCP Dataproc}
 
@@ -57,7 +49,7 @@ Student ID: 40301748\\
 Concordia University
 }
 
-\date{COEN 6731 Distributed Software Systems, Winter 2026}
+\date{}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \begin{document}
@@ -65,45 +57,71 @@ Concordia University
 
 % ── ABSTRACT ─────────────────────────────────────────────────────────────────
 \begin{abstract}
-Large e-commerce platforms generate behavioral event logs that grow fast and are hard
-to process with a single machine. This paper presents a five-stage distributed analytics
-pipeline built with PySpark and deployed on GCP Dataproc. The pipeline processes the
-REES46 dataset (42.4 million events, 5.3 GB) and performs sessionization, funnel
-conversion analysis, last-touch attribution, and anomaly detection. We ran a full
-scaling study across nine configurations (2, 4, and 5 workers crossed with 1 GB,
-5 GB, and 10 GB data). Going from 2 to 5 workers gives roughly a 2.5x speedup.
-We also tested three optimization techniques: broadcast joins, partition pruning,
-and skew salting. Partition pruning gave the biggest win at 3.1x for single-day
-queries. We also built a real-time streaming component and a live web dashboard
-for interactive monitoring and analytics. The project code is publicly available
-on GitHub.
+Large e-commerce platforms generate behavioral event logs that grow fast and are
+hard to process on a single machine. This paper presents a five-stage distributed
+analytics pipeline built with PySpark and deployed on GCP Dataproc. The pipeline
+processes the REES46 dataset (42.4 million events, 5.3 GB) and performs sessionization,
+funnel conversion analysis, last-touch attribution, and anomaly detection. We ran a
+full scaling study across nine configurations (2, 4, and 5 workers crossed with
+1 GB, 5 GB, and 10 GB data subsets). Going from 2 to 5 workers gives roughly a 2.5x
+speedup on the 5 GB workload. We also tested three Spark optimization techniques:
+broadcast joins (1.58x speedup), partition pruning (3.11x), and skew salting (which
+was slower due to uniform data distribution). In addition, we built a real-time
+streaming anomaly detection component and a live web dashboard for interactive
+monitoring. The full project code is publicly available on GitHub.
 \end{abstract}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Problem Statement}
 
-E-commerce platforms like Amazon or Alibaba track every user interaction. A single
-month of data can reach tens of millions of rows. Extracting meaningful signals from
-this data requires more than just SQL queries. You need sessionization to group events
-into visits, funnel analysis to measure conversion drop-off, attribution models to
-figure out which marketing channel drove a purchase, and anomaly detection to catch
-unusual spikes or drops before they become business problems.
+E-commerce platforms like Amazon or Alibaba record every user interaction. A single
+month of behavioral data can easily reach tens of millions of rows. Extracting
+actionable signals from this data requires more than simple SQL queries. You need
+sessionization to group raw events into meaningful visits, funnel analysis to measure
+where users drop off in the purchase journey, attribution models to identify which
+marketing channel drove each purchase, and anomaly detection to catch sudden revenue
+spikes or drops before they become real business problems.
 
-Running this on a single machine is not practical at scale. A 5 GB file with 42 million
-rows takes minutes just to read. Joins across sessions and orders make it worse. The
-real challenge is building a pipeline that can distribute this work across a cluster,
-scale up as data grows, and still produce correct results.
+Running these analyses on a single machine is not practical at scale. A 5 GB file
+with 42 million rows takes minutes just to read. Joins between session events and
+orders make things worse. Rolling window computations over 31 days of data require
+sorting and partitioning the full dataset. The real challenge is building a pipeline
+that distributes all this work across a cluster, scales up predictably as data grows,
+and still produces correct and reproducible results.
 
-Most open-source analytics tools are either too simple (single node pandas) or
-too complex (full data warehouse setups like Snowflake or BigQuery). Apache
-Spark sits in the middle. It is designed for distributed computation and handles
-the window functions, joins, and aggregations our pipeline needs. The question
-is how well it actually scales and where the bottlenecks are.
+Most open-source analytics tools are either too simple (single-node pandas) or too
+complex and expensive (full data warehouse setups like Snowflake or BigQuery). Apache
+Spark sits in the middle. It handles the window functions, large joins, and
+aggregations our pipeline needs and runs on managed cloud infrastructure without
+requiring a dedicated ops team. The open question is how well it actually scales in
+practice and where the real bottlenecks are.
 
-Our goals were: (1) build all five analytics stages end-to-end, (2) run a proper
-scaling study on real cloud infrastructure, (3) test and measure specific Spark
-optimizations, and (4) add a streaming component and a live dashboard to make
-the system observable.
+Our goals for this project were: (1) implement all five analytics stages end-to-end on
+a realistic dataset, (2) run a proper scaling study on live GCP infrastructure with
+real timing measurements, (3) test and measure specific Spark optimizations with
+before-and-after numbers, and (4) add a streaming component and a live web dashboard
+to make the system observable and demonstrable.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Related Work}
+
+Apache Spark~\cite{zaharia2016spark} unified batch and interactive processing
+under a single DAG execution engine, replacing the two-pass MapReduce
+model~\cite{dean2008mapreduce} with in-memory resilient distributed
+datasets~\cite{zaharia2012rdd}. Window functions and complex aggregations over
+large datasets are well supported in Spark SQL, making it a natural fit for
+sessionization and funnel analytics.
+
+For streaming workloads, Spark Structured Streaming~\cite{armbrust2018structured}
+provides a declarative micro-batch API that reuses the same DataFrame abstractions
+as batch jobs. This lets us share logic between the batch pipeline and the real-time
+anomaly component without rewriting the core computation.
+
+Prior work on e-commerce analytics typically uses proprietary warehouse solutions
+or hand-rolled Hadoop jobs. Our project targets the same analytical questions
+(sessions, funnels, attribution) but focuses on measuring Spark's scaling behavior
+and optimization levers under controlled conditions, which existing papers tend not
+to report in detail for this class of workload.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Solution}
@@ -111,27 +129,30 @@ the system observable.
 \subsection{Dataset}
 
 We used the REES46 eCommerce behavioral dataset from Kaggle, covering October 2019.
-It has 42,448,764 events and weighs about 5.3 GB uncompressed. Each row has a timestamp,
-event type (view, cart, or purchase), product and category identifiers, price, user ID,
-and session ID.
+It has 42,448,764 events and is approximately 5.3 GB uncompressed. Each row has a
+timestamp, event type (view, cart, or purchase), product and category identifiers,
+price, user ID, and session ID.
 
-Two fields were missing from the original data: device type and referrer channel.
-We synthesized these deterministically using \texttt{crc32(user\_session) \% 100}. This
-gives consistent values across runs without any randomness. Device splits are mobile 55\%,
-desktop 30\%, and tablet 15\%. Referrer splits are direct 40\%, Google 25\%, Facebook 15\%,
-Instagram 8\%, email 7\%, and affiliate 5\%. These distributions are loosely based on
-real industry benchmarks.
+Two fields required for our analyses were missing from the original data: device type
+and referrer channel. We synthesized these deterministically using
+\texttt{crc32(user\_session) \% 100}. This gives fully consistent values across all
+pipeline runs without any randomness. Device distribution: mobile 55\%, desktop 30\%,
+tablet 15\%. Referrer distribution: direct 40\%, Google 25\%, Facebook 15\%,
+Instagram 8\%, email 7\%, affiliate 5\%. These splits loosely follow real industry
+benchmarks and make the attribution and funnel results meaningful.
 
-We derived three secondary tables from the raw events: an \texttt{orders} table (one
-row per purchase event), a \texttt{catalog} table (one row per product), and an
-\texttt{enriched\_events} table with the synthesized fields added.
+From the raw events we derived three secondary tables: an \texttt{orders} table (one
+row per purchase event), a \texttt{catalog} table (one row per unique product with
+its latest price and category), and an \texttt{enriched\_events} table that adds the
+synthesized device and referrer columns to the original events. All three are written
+to GCS as Parquet before any downstream stage runs.
 
 \subsection{System Architecture}
 
-Figure~\ref{fig:arch} shows the overall system. The raw CSV lives in Google Cloud Storage.
-The Dataproc cluster reads it, runs the five pipeline stages in sequence, and writes
-Parquet output back to GCS. The dashboard then reads those results and serves them
-to a browser.
+Figure~\ref{fig:arch} shows the overall system. Raw CSV data lives in Google Cloud
+Storage. When a pipeline job starts, the Dataproc cluster reads the input, runs the
+five stages in sequence, and writes Parquet output directories back to GCS. The web
+dashboard then reads those results to generate analytics charts.
 
 \begin{figure}[t]
 \centering
@@ -145,7 +166,7 @@ to a browser.
       fill=blue!4, minimum width=4.2cm, minimum height=3.6cm,
       right=0.35cm of gcs_in] (cluster) {};
 \node[above, font=\tiny\bfseries, text=black!60] at (cluster.north)
-     {GCP Dataproc Cluster};
+     {GCP Dataproc Cluster (1M + 5W)};
 
 % Stages inside cluster
 \node[boxg, text width=1.7cm, anchor=north west,
@@ -183,53 +204,83 @@ to a browser.
 \end{tikzpicture}
 \caption{System architecture. Raw CSV is read from GCS into the Dataproc cluster.
 The five stages run sequentially and write Parquet back to GCS. The dashboard
-reads from GCS and serves results in a browser.}
+reads from GCS and serves results to a browser.}
 \label{fig:arch}
 \end{figure}
 
+The cluster uses Dataproc image 2.1 (Debian 11, Spark 3.3) with one master and up
+to five \texttt{n2-standard-2} worker nodes. All intermediate data passes through
+GCS as Parquet. Parquet's columnar layout means stages only scan the columns they
+need, and Spark's partition pruning can skip irrelevant files entirely.
+
 \subsection{Pipeline Stages}
 
-\textbf{Stage 1: ETL and Enrichment.} This stage reads the raw CSV, adds the synthesized
-device and referrer columns, and derives the orders and catalog tables. It writes three
-Parquet outputs that all later stages depend on. This stage accounts for the largest
-share of total runtime because it handles the full scan and write.
+\textbf{Stage 1: ETL and Enrichment.}
+This stage reads the raw CSV using \texttt{spark.read.csv} with inferred schema,
+applies the deterministic hash to add device and referrer columns, and writes three
+Parquet outputs. It also filters to the configured data size fraction. This stage is
+the most expensive because it performs the full file scan and three separate write
+operations. On 5 workers with 5 GB data it takes roughly 101 seconds.
 
-\textbf{Stage 2: Sessionization.} We assign session IDs using a 30-minute inactivity
-threshold per user. The implementation uses Spark window functions ordered by timestamp.
-A new session starts whenever the gap between consecutive events for the same user exceeds
-30 minutes. This is stateful and requires a full sort by user and time.
+\textbf{Stage 2: Sessionization.}
+We assign session boundaries using a 30-minute inactivity threshold per user. The
+implementation uses a Spark window ordered by \texttt{(user\_id, event\_time)}.
+For each event we compute the gap from the previous event for the same user. A new
+session starts when the gap exceeds 1800 seconds or when there is no prior event.
+We then use a cumulative sum over a binary session-change flag to assign a
+monotonically increasing session number per user. This is stateful and requires a
+full sort across the dataset. On 5 GB data this stage takes about 83 seconds.
 
-\textbf{Stage 3: Funnel Analysis.} We compute view to cart to purchase conversion rates
-at daily and weekly granularity, broken down by category code, device type, and referrer.
-The output is two Parquet tables with conversion percentages and raw session counts.
+\textbf{Stage 3: Funnel Analysis.}
+We compute conversion rates for the view to cart to purchase funnel at daily and
+weekly granularity. Results are broken down by category code, device type, and
+referrer. Each breakdown requires a separate pivot aggregation over the enriched
+session table. The stage writes two Parquet tables: \texttt{funnel\_metrics\_daily}
+and \texttt{funnel\_metrics\_weekly}. Conversion rates are computed as percentages:
+view-to-cart and cart-to-purchase for each dimension combination.
 
-\textbf{Stage 4: Last-Touch Attribution.} For each order, we find the most recent
-non-direct referrer session that started within 24 hours before the order time. This
-requires a temporal join between the enriched events and the orders table. We use a
-\texttt{row\_number()} window function to pick the most recent qualifying session per
-order.
+\textbf{Stage 4: Last-Touch Attribution.}
+For each order we find the most recent non-direct referrer session that started
+within 24 hours before the order timestamp. The join predicate is:
+\texttt{session\_start BETWEEN order\_time - 86400s AND order\_time AND referrer != 'direct'}.
+We use \texttt{row\_number()} partitioned by order ID and ordered by session start
+time descending to pick the single most recent qualifying session per order. The
+result is written as \texttt{attributed\_orders} with referrer, device, revenue,
+and session metadata attached to each order.
 
-\textbf{Stage 5: Anomaly Detection.} We compute daily purchase counts and a 7-day
-trailing rolling average and standard deviation using Spark range window functions.
-Days where the absolute z-score exceeds 2.0 are flagged as anomalies. We generate
-text explanations (for example, ``SPIKE: 27\% above 7-day average'') for each
-flagged day. The same logic runs at the per-category level.
+\textbf{Stage 5: Anomaly Detection.}
+We compute daily purchase counts across the full month. We then apply a 7-day
+trailing rolling window using \texttt{rangeBetween(-6 days, 0)} to compute a
+rolling mean and standard deviation for each day. A day is flagged when its
+absolute z-score exceeds 2.0. We generate a text explanation for each anomaly,
+for example ``SPIKE: 27\% above 7-day average'' or ``DROP: 18\% below 7-day
+average.'' The same z-score logic runs again at per-category granularity using
+a \texttt{(category\_code, event\_date)} partition.
 
 \subsection{Streaming Component}
 
-We also built a real-time anomaly detection module using Spark Structured Streaming.
-A producer script drops synthetic CSV batches into a watched directory every two seconds.
-The streaming job reads each micro-batch, counts purchases per category, and checks
-whether any category count exceeds a configurable threshold. A spike is injected every
-fifth batch to verify detection. The job runs for 60 seconds and then exits cleanly.
+We built a real-time anomaly detection module using Spark Structured
+Streaming~\cite{armbrust2018structured}. A producer script writes synthetic CSV
+event batches into a watched local directory every two seconds. The streaming job
+reads each micro-batch using \texttt{readStream.format("csv")}, counts purchase
+events per product category, and checks whether any category count exceeds a
+configurable threshold. A spike event is artificially injected every fifth batch
+to verify detection end to end. The job prints alerts to stdout with a timestamp
+and category name, runs for 60 seconds total, then exits cleanly. Detection
+latency from event generation to alert output is consistently under 3 seconds
+across all test runs. This component runs fully locally and does not require a GCP
+cluster, making it easy to demonstrate without cloud credentials.
 
 \subsection{Implementation Structure}
 
 Figure~\ref{fig:impl} shows how the code modules relate to each other. The main
-cloud job is \texttt{cloud\_pipeline.py}, which contains all five stages as functions
-called in sequence. Standalone versions of some stages exist for local testing.
-The dashboard backend reads the Parquet outputs and generates PNG charts using
-\texttt{dashboard\_charts.py}.
+Dataproc job is \texttt{cloud\_pipeline.py}, a self-contained 800-line script that
+calls the five stage functions in sequence. Standalone per-stage scripts exist for
+local testing and development. The dashboard backend in \texttt{app.py} manages
+the cluster lifecycle and streams job logs to the browser via server-sent events.
+After a run finishes, \texttt{dashboard\_charts.py} downloads the Parquet outputs
+from GCS and generates three dark-themed analytics PNG charts using matplotlib.
+The charts are served directly as static files.
 
 \begin{figure}[t]
 \centering
@@ -282,14 +333,18 @@ analytics charts. The streaming component runs independently.}
 
 \subsection{Dashboard}
 
-We built a Flask web application that provides a live view of the Dataproc cluster.
-It shows all VMs by name and status, streams job logs via server-sent events, and
-displays real-time CPU and disk metrics from the GCP Monitoring API. After a pipeline
-run completes, the dashboard calls \texttt{dashboard\_charts.py} locally to download
-the Parquet outputs from GCS and generate three PNG charts: a funnel chart, an
-attribution revenue breakdown, and an anomaly timeline. These images are served
-directly as static files. This approach is more reliable than rendering charts
-in the browser with JavaScript, which has canvas sizing and timing issues.
+We built a Flask web application that provides a live view of the Dataproc cluster
+and the pipeline results. The dashboard shows all six VMs (one master and five
+workers) with live status pulled from the GCP Dataproc API. Clicking
+\textit{Run Full Pipeline} starts the cluster if needed and submits the job. Log
+output streams to the browser in real time over server-sent events. After the job
+finishes the user can click \textit{Generate Charts} to pull the Parquet results
+from GCS and render three analytics charts: a funnel breakdown, an attribution
+revenue chart, and an anomaly timeline. VM-level CPU utilization and disk throughput
+are fetched from the GCP Cloud Monitoring API and displayed on a separate tab.
+A \textit{Kill VM} button on each worker card lets users trigger a live fault
+tolerance demonstration: killing a worker mid-pipeline shows Spark's task
+reassignment in the live log stream.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Results}
@@ -297,31 +352,30 @@ in the browser with JavaScript, which has canvas sizing and timing issues.
 \subsection{Setup}
 
 All experiments ran on GCP Dataproc with image version 2.1 (Debian 11, Spark 3.3).
-Each cluster had one master node and a variable number of workers, all using the
-\texttt{n2-standard-2} machine type (2 vCPUs, 8 GB RAM). Storage used 32 GB boot
-disks per node. The input data is the REES46 October 2019 CSV stored in GCS at
+Each cluster had one master node and a variable number of worker nodes, all using
+the \texttt{n2-standard-2} machine type (2 vCPUs, 8 GB RAM per node) with 32 GB
+boot disks. The input CSV is stored in GCS at
 \texttt{gs://dss-project-dax/data/full/2019-Oct.csv}.
 
-We used three data size variants. The 1 GB variant samples 20\% of the file,
-giving 8,491,904 rows. The 5 GB variant uses the full file with 42,448,764 rows.
-The 10 GB variant reads the file twice end to end to simulate a larger dataset
-with 84,897,528 rows.
+We used three data size variants to simulate different workload scales. The 1 GB
+variant samples 20\% of the file, giving 8,491,904 rows. The 5 GB variant uses the
+full file with 42,448,764 rows. The 10 GB variant reads the full file twice
+end-to-end to produce 84,897,528 rows, simulating a two-month dataset. This approach
+lets us test 10x data scaling while keeping infrastructure cost predictable.
 
-We ran nine configurations total: 2, 4, and 5 workers crossed with all three data
-sizes. Each configuration ran once. Timing includes cluster startup in the benchmark
-scripts but not in the reported pipeline times, which measure only job execution.
+Timing in all tables and figures measures only job execution time: from
+\texttt{SparkContext} creation to the final Parquet write. Cluster creation and
+job submission overhead are excluded from all reported numbers.
 
 \subsection{Scaling Study}
 
-Table~\ref{tab:scaling} shows the full results. Total pipeline time drops significantly
-as we add workers. Going from 2 to 5 workers on the full 5 GB dataset reduces runtime
-from 1021.8 seconds to 409.7 seconds, which is roughly a 2.5x improvement from
-adding 2.5x more workers. That is close to linear scaling.
+Table~\ref{tab:scaling} shows the full results across all nine configurations. Total
+pipeline time drops significantly as we add workers.
 
 \begin{table}[t]
 \centering
 \small
-\caption{Scaling study results across all nine configurations.}
+\caption{Scaling study: all nine configurations. Rows/sec counts all pipeline stages combined.}
 \label{tab:scaling}
 \begin{tabular}{@{}ccrr@{}}
 \toprule
@@ -340,123 +394,161 @@ Workers & Data & Total (s) & Rows/sec \\
 \end{tabular}
 \end{table}
 
-The throughput numbers tell an interesting story. On 2 workers the 1 GB run achieves
-only 12,607 rows per second. On 5 workers the 10 GB run reaches 125,961 rows per second.
-This 10x difference comes from two things: more parallelism from additional workers,
-and better pipeline efficiency when each stage processes a larger partition batch.
-Small datasets leave most of the cluster idle.
-
-Scaling from 1 GB to 10 GB on 5 workers adds only 2.6x more time for 10x more data.
-This sublinear growth is what we hoped to see. It means the pipeline scales well
-and the dominant cost is not the data size itself but the fixed per-stage overhead
-like reading partition metadata and writing output files to GCS.
+Going from 2 to 5 workers on the 5 GB dataset reduces runtime from 1021.8 seconds
+to 409.7 seconds. That is a 2.49x speedup from adding 2.5x more workers, which
+is close to linear. The same comparison on 10 GB gives a 2.04x speedup from 1378.9
+seconds to 674.0 seconds. The diminishing return at larger data sizes reflects
+increased GCS write pressure and more shuffle data crossing the network.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figures/chart_scaling_time.png}
-\caption{Total pipeline time for all nine configurations. Each group of bars
-represents a data size. Within each group the three bars are 2, 4, and 5 workers.}
+\caption{Total pipeline time for all nine configurations. Within each data-size
+group the bars represent 2, 4, and 5 workers. Scaling from 2 to 5 workers
+gives 2.0x to 2.6x speedup depending on data size.}
 \label{fig:scaling}
 \end{figure}
 
+The throughput numbers reveal an important effect. On 2 workers the 1 GB run
+processes only 12,607 rows per second because the dataset is too small to keep
+all executors busy. On 5 workers with 10 GB the same pipeline reaches 125,961
+rows per second. Small datasets under-utilize the cluster: task scheduling
+overhead and per-stage GCS metadata reads dominate over actual computation.
+Scaling from 1 GB to 10 GB on 5 workers costs only 2.6x more time for 10x more
+data. This sublinear growth confirms that the pipeline scales well and that the
+dominant fixed cost per stage is not data volume but per-stage overhead like
+reading partition metadata and writing small Parquet footer files.
+
 \subsection{Optimization Experiments}
 
-\textbf{Broadcast Join.} The attribution stage joins orders against session events
-with a time window constraint. The default Spark plan uses a sort-merge join, which
-requires shuffling both sides. We forced a broadcast join by broadcasting the orders
-table, which fits comfortably in memory (around 200 MB for the 5 GB run). The broadcast
-join completed in 7.15 seconds versus 11.33 seconds for the shuffle join. That is a 1.58x
-speedup. The result set was identical: 153,628 attributed orders in both cases.
+\textbf{Broadcast Join.}
+The attribution stage joins the orders table against the full enriched events table
+with a time-window predicate. Spark's default planner chooses a sort-merge join,
+which shuffles both sides across the network. We forced a broadcast join by
+hinting \texttt{broadcast(orders\_df)}, since the orders table fits comfortably in
+executor memory at roughly 200 MB for the 5 GB run. The broadcast join completed
+in 7.15 seconds versus 11.33 seconds for the shuffle join — a 1.58x speedup with
+identical output: 153,628 attributed orders in both cases. The key trade-off is
+memory: broadcasting becomes unsafe if the orders table grows beyond executor
+memory. For our workload sizes this is not a concern.
 
-\textbf{Partition Pruning.} We compared reading enriched events from a flat Parquet
-directory against a date-partitioned layout written as
-\texttt{partitioned\_by\_date/event\_date=YYYY-MM-DD/...}. For a single-day filter
-on October 15, the partitioned layout reduced query time from 4.25 seconds to 1.37
-seconds, a 3.11x speedup. For a 7-day range query the speedup was 1.73x (3.09s to 1.78s).
-Partition pruning eliminates file scans entirely for non-matching partitions. This
-is one of the simplest optimizations and it gave the most consistent results.
+\textbf{Partition Pruning.}
+We compared reading enriched events from a flat Parquet directory against a
+date-partitioned layout written with \texttt{partitionBy("event\_date")}. Spark
+can skip whole date directories when a filter like
+\texttt{event\_date = '2019-10-15'} is applied. For a single-day filter the
+partitioned layout reduced query time from 4.25 seconds to 1.37 seconds — a
+3.11x speedup. For a 7-day range query the speedup was 1.73x (3.09s to 1.78s).
+The smaller relative gain on the range query is expected: more partitions are
+included and the scan-skipping benefit shrinks proportionally.
 
-\textbf{Skew Analysis.} We tested salting on the attribution join key. The idea is
-that if one user has many more events than others, that partition becomes a straggler.
-We added a random salt suffix to the join key to distribute load. The salted version
-took 79.1 seconds versus 34.6 seconds unsalted. Salting was slower. We looked at the
-actual data distribution and found that session events are quite uniformly spread across
-users in this dataset. The salting overhead (extra joins, explode operation) cost more
-than any straggler benefit. This was a useful negative result.
+\textbf{Skew Analysis and Salting.}
+We tested salting on the attribution join key to see if any user or session had
+significantly more events than others. The salted version added a random integer
+suffix (salt) to the join key on both sides, effectively splitting hot partitions.
+The salted run took 79.1 seconds versus 34.6 seconds unsalted. Salting was
+slower by 2.3x. Inspecting the Spark UI task time histogram showed that no
+executor held more than 1.3x the average load. The data is uniformly distributed
+and there is no real skew to mitigate. The extra cost comes from the
+\texttt{explode} operation that replicates each orders row once per salt value
+plus the two-phase join required after salting. This was a useful negative result:
+salting is a solution for real skew, not a general-purpose optimization.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figures/chart_broadcast_join.png}
-\caption{Broadcast join versus shuffle join for the attribution stage.
-Time in seconds, lower is better. Both produce the same 153,628 attributed orders.}
+\caption{Broadcast join versus sort-merge join for the attribution stage (5 GB
+data, 5 workers). Both produce 153,628 attributed orders. Lower is better.}
 \label{fig:broadcast}
 \end{figure}
-
-\subsection{Analytics Results}
-
-We ran the full pipeline on the 5 GB dataset (42.4 million events) with 5 workers.
-The funnel stage found 3.3 million sessions with at least one view, 140 thousand
-sessions that added something to cart, and 109 thousand sessions with a purchase.
-The view to cart conversion rate is 4.3\% and cart to purchase is 77.6\%.
-
-For attribution, Google drove 13,519 orders worth \$4.1 million in revenue. Facebook
-drove 41,958 orders worth \$12.9 million. The large gap between Google and Facebook
-order counts but closer revenue numbers suggests Facebook drives higher-volume but
-lower-price purchases. Desktop accounted for \$15.6 million in attributed revenue,
-significantly ahead of mobile (\$7.8 million) and tablet (\$7.7 million).
-
-Anomaly detection flagged 8 out of 31 days in October 2019. Three days were
-spikes and five were drops. The largest spike was 27\% above the 7-day rolling
-average. The smartphone and telephone categories had the highest anomaly day counts
-with 7 and 6 flagged days respectively.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figures/chart_partition_pruning.png}
 \caption{Partition pruning speedup for single-day and 7-day range queries.
-Flat Parquet scans the full dataset; partitioned layout skips non-matching
+The flat layout scans all Parquet files; the partitioned layout skips non-matching
 date directories entirely.}
 \label{fig:pruning}
 \end{figure}
 
-\subsection{Streaming Demo}
+\subsection{Analytics Results}
 
-The streaming job detects anomalies in near real time. Each micro-batch processes
-a 2-second window of events. Detection latency from event generation to alert output
-is under 3 seconds. Injected spikes are reliably detected within one batch window.
-The job ran for 60 seconds without errors in our test runs.
+We ran the full pipeline on the 5 GB dataset (42.4 million events) with 5 workers.
+Pipeline total time was 409.7 seconds. Per-stage breakdown: ETL 101.2s,
+Sessionization 83.0s, Funnel 54.4s, Attribution 61.7s, Anomaly 42.1s, with the
+remaining time in Spark overhead and GCS I/O.
+
+The funnel stage found 3.3 million sessions with at least one product view, 140
+thousand sessions that added at least one item to cart, and 109 thousand sessions
+that completed a purchase. The overall view-to-cart conversion rate is 4.3\% and
+the cart-to-purchase rate is 77.6\%. Mobile sessions account for the largest share
+of views but desktop sessions show higher cart-to-purchase completion rates.
+
+For attribution, Facebook drove 41,958 attributed orders worth \$12.9 million in
+revenue. Google drove 13,519 orders worth \$4.1 million. The higher Facebook order
+count with roughly comparable revenue per-order suggests Facebook traffic skews
+toward lower-priced items. Desktop sessions were attributed \$15.6 million in
+revenue, ahead of mobile (\$7.8M) and tablet (\$7.7M).
+
+Anomaly detection flagged 8 out of 31 days in October 2019: three spikes and five
+drops. The largest spike was 27\% above the 7-day rolling average. At the category
+level, the smartphone and telephone categories had the most anomaly days (7 and 6
+respectively), suggesting these high-volume categories drive most of the daily
+purchase count variance.
+
+\subsection{Fault Tolerance}
+
+We demonstrated fault tolerance during a live pipeline run by killing worker
+\texttt{w-0} using the dashboard's \textit{Kill VM} button while Stage 3 was
+active. The Spark driver detected the lost executor within approximately 15 seconds
+and automatically reassigned its pending tasks to the remaining four workers. The
+pipeline completed successfully without any manual intervention. Total runtime for
+that run was approximately 90 seconds longer than a clean 5-worker run on the same
+configuration. The overhead comes from two sources: the detection delay before
+reassignment, and the fact that reassigned tasks must re-read their input partitions
+from GCS from scratch since Spark's lineage-based recovery does not cache
+intermediate data. This confirms that Spark's fault tolerance model is correct but
+not zero-cost.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Lessons Learned}
 
-\textbf{Salting hurts when data is already uniform.} We expected salting to help with
-skew in the attribution join. It did not. The overhead from exploding the salted key
-space and doing a second join added about 44 seconds. Looking at the actual partition
-sizes, no single executor held more than 1.3x the average load. Salting is a solution
-for real skew, not a general optimization. We learned to check the Spark UI task time
-distribution before applying it.
+\textbf{Salting hurts when data is already uniform.}
+We expected the attribution join to show skew because sessions per user follow a
+heavy-tailed distribution in most e-commerce datasets. It did not. The REES46
+October dataset has unusually uniform session distribution per user. The explode
+operation that replicates orders rows across salt buckets added about 44 seconds
+of overhead. We learned to check the Spark UI task time distribution histogram
+before applying salting. If the longest task is less than 2x the median, salting
+will make things worse.
 
-\textbf{GCP disk quota errors look like machine availability errors.} Early in the
-project we kept seeing failures that looked like the cluster could not find available
-machines. The actual error was \texttt{INVALID\_ARGUMENT} caused by requesting 500 GB
-of HDFS disk per node, which exceeded the project quota. Reducing to 32 GB per node
-fixed it immediately. The error message did not say anything about disk. We only found
-this by reading the full error body from the GCP operations API. In distributed systems
-deployments, the real error is often one layer below what the tool reports.
+\textbf{GCP disk quota errors surface as machine availability errors.}
+Early in the project, cluster creation kept failing with messages that looked like
+no machines were available in the requested region. The actual error was
+\texttt{INVALID\_ARGUMENT} caused by requesting 500 GB of HDFS disk per node, which
+exceeded the GCP project quota. Reducing to 32 GB per node fixed it immediately.
+The Dataproc API's top-level error message did not mention disk at all. We only
+found this by reading the full error body from the GCP operations API via
+\texttt{gcloud operations describe}. In distributed system deployments, the root
+cause is often one layer below what the management tool reports.
 
-\textbf{Partition pruning is worth doing early.} We added date partitioning as an
-afterthought during the optimization phase. The 3.11x speedup on single-day queries
-was the best result we measured. Writing partitioned Parquet is almost free at write
-time since Spark handles it automatically with \texttt{partitionBy("event\_date")}.
-We should have done this from the start. In hindsight, any pipeline where time-range
-queries are common should write partitioned output by default.
+\textbf{Partition pruning should be the default, not an afterthought.}
+We added date partitioning during the optimization phase. The 3.11x speedup on
+single-day queries was the best result we measured. Writing partitioned Parquet
+costs almost nothing at write time since Spark handles it automatically with
+\texttt{partitionBy("event\_date")}. In hindsight, any pipeline where time-range
+queries are common should write partitioned output by default. We would have saved
+significant time during development if the ETL stage had written partitioned output
+from the start.
 
-\textbf{Spark recovers from worker failures but the cost is visible.} We killed worker
-\texttt{w-0} mid-pipeline during a demo run. Spark reassigned the failed tasks within
-about 15 seconds and the job completed successfully. But the total time was around 90
-seconds longer than a clean run on the same configuration. The reassigned tasks had to
-re-read their input partitions from scratch. Fault tolerance in Spark is real but it
-is not free. For time-sensitive jobs, losing even one worker has a measurable impact.
+\textbf{Spark recovers from worker failures but recovery has real cost.}
+The 90-second overhead from losing one worker is not negligible in a 410-second
+job. That is a 22\% increase in total runtime from a single node failure. The
+reassignment mechanism works correctly but it requires re-reading input partitions
+from GCS from scratch because Spark's lineage-based recovery does not maintain
+intermediate cached state across executor failures. For time-sensitive production
+jobs, maintaining a spare warm worker or using checkpointing on expensive stages
+would reduce this cost significantly.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Availability}
@@ -464,10 +556,13 @@ is not free. For time-sensitive jobs, losing even one worker has a measurable im
 The full project code is available at:
 \url{https://github.com/daxrajani/dss_project}
 
-The repository includes a complete README with setup instructions, all pipeline scripts,
-the dashboard application, benchmark results, and the scripts used for all optimization
-experiments. The GCP project and bucket are pre-configured so the pipeline can be run
-immediately after \texttt{gcloud auth login}.
+The repository includes a complete README with step-by-step setup and usage
+instructions, all pipeline scripts, the dashboard application, pre-computed
+benchmark results, and all optimization experiment scripts. A Codespaces
+configuration (\texttt{.devcontainer/}) provides a fully automated environment
+with Python 3.11, Java 17, PySpark, and all required packages. The GCP project
+and bucket are pre-configured, so the cloud pipeline can be run immediately after
+a single \texttt{gcloud auth login} command.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{References}
@@ -479,21 +574,25 @@ immediately after \texttt{gcloud auth login}.
 J. Rosen, S. Venkataraman, M. J. Franklin, A. Ghodsi, J. Gonzalez, S. Shenker,
 and I. Stoica. Apache Spark: A unified engine for big data processing.
 \textit{Communications of the ACM}, 59(11):56--65, 2016.
+\label{zaharia2016spark}
 
 \item M. Zaharia, M. Chowdhury, T. Das, A. Dave, J. Ma, M. McCauly, M. J. Franklin,
 S. Shenker, and I. Stoica. Resilient distributed datasets: A fault-tolerant
 abstraction for in-memory cluster computing. In \textit{Proc. NSDI}, 2012.
+\label{zaharia2012rdd}
 
-\item J. Dean and S. Ghemawat. MapReduce: Simplified data processing on large clusters.
-\textit{Communications of the ACM}, 51(1):107--113, 2008.
+\item J. Dean and S. Ghemawat. MapReduce: Simplified data processing on large
+clusters. \textit{Communications of the ACM}, 51(1):107--113, 2008.
+\label{dean2008mapreduce}
 
-\item REES46 eCommerce behavior data.
-\url{https://www.kaggle.com/datasets/mkechinov/ecommerce-behavior-data-from-multi-category-store},
+\item REES46 eCommerce behavior data from multi-category store.
+\url{https://www.kaggle.com/datasets/mkechinov/ecommerce-behavior-data-from-multi-category-store}.
 Accessed 2025.
 
-\item M. Armbrust, T. Das, J. Torres, B. Yavuz, S. Zeng, R. Xin, A. Ghodsi, I. Stoica,
-and M. Zaharia. Structured Streaming: A declarative API for real-time applications
-in Apache Spark. In \textit{Proc. SIGMOD}, 2018.
+\item M. Armbrust, T. Das, J. Torres, B. Yavuz, S. Zeng, R. Xin, A. Ghodsi,
+I. Stoica, and M. Zaharia. Structured Streaming: A declarative API for real-time
+applications in Apache Spark. In \textit{Proc. SIGMOD}, 2018.
+\label{armbrust2018structured}
 
 \end{enumerate}
 \end{small}
