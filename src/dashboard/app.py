@@ -33,16 +33,18 @@ def _find_tool(name):
 GCLOUD  = _find_tool("gcloud")
 GSUTIL  = _find_tool("gsutil")
 
-# ── GCP config — override via environment variables ───────────────────
-# Set these before running:
-#   export GCP_PROJECT=your-project-id
-#   export GCS_BUCKET=gs://your-bucket
-#   export DATAPROC_CLUSTER=your-cluster-name
-#   export GCP_REGION=us-central1
-#   export GCP_ZONE=us-central1-f
-PROJECT = os.environ.get("GCP_PROJECT", "")
-REGION  = os.environ.get("GCP_REGION",  "us-central1")
-ZONE    = os.environ.get("GCP_ZONE",    "us-central1-f")
+# ── GCP config — env vars take priority, fall back to gcloud config ───
+def _gcloud_config(key):
+    """Read a value from gcloud config (e.g. 'project', 'compute/region')."""
+    r = subprocess.run(
+        [GCLOUD, "config", "get-value", key],
+        capture_output=True, text=True)
+    val = r.stdout.strip()
+    return val if val and val != "(unset)" else ""
+
+PROJECT = os.environ.get("GCP_PROJECT", "") or _gcloud_config("project")
+REGION  = os.environ.get("GCP_REGION",  "") or _gcloud_config("compute/region") or "us-central1"
+ZONE    = os.environ.get("GCP_ZONE",    "") or _gcloud_config("compute/zone")   or "us-central1-f"
 CLUSTER = os.environ.get("DATAPROC_CLUSTER", "")
 BUCKET  = os.environ.get("GCS_BUCKET",  "")
 INPUT   = os.environ.get("GCS_INPUT",   f"{BUCKET}/data/2019-Oct.csv")
