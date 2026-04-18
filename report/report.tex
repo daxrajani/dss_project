@@ -106,14 +106,14 @@ to make the system observable and demonstrable.
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Related Work}
 
-Apache Spark~\cite{zaharia2016spark} unified batch and interactive processing
+Apache Spark~[1] unified batch and interactive processing
 under a single DAG execution engine, replacing the two-pass MapReduce
-model~\cite{dean2008mapreduce} with in-memory resilient distributed
-datasets~\cite{zaharia2012rdd}. Window functions and complex aggregations over
+model~[3] with in-memory resilient distributed
+datasets~[2]. Window functions and complex aggregations over
 large datasets are well supported in Spark SQL, making it a natural fit for
 sessionization and funnel analytics.
 
-For streaming workloads, Spark Structured Streaming~\cite{armbrust2018structured}
+For streaming workloads, Spark Structured Streaming~[5]
 provides a declarative micro-batch API that reuses the same DataFrame abstractions
 as batch jobs. This lets us share logic between the batch pipeline and the real-time
 anomaly component without rewriting the core computation.
@@ -261,7 +261,7 @@ a \texttt{(category\_code, event\_date)} partition.
 \subsection{Streaming Component}
 
 We built a real-time anomaly detection module using Spark Structured
-Streaming~\cite{armbrust2018structured}. A producer script writes synthetic CSV
+Streaming~[5]. A producer script writes synthetic CSV
 event batches into a watched local directory every two seconds. The streaming job
 reads each micro-batch using \texttt{readStream.format("csv")}, counts purchase
 events per product category, and checks whether any category count exceeds a
@@ -575,16 +575,13 @@ a single \texttt{gcloud auth login} command.
 J. Rosen, S. Venkataraman, M. J. Franklin, A. Ghodsi, J. Gonzalez, S. Shenker,
 and I. Stoica. Apache Spark: A unified engine for big data processing.
 \textit{Communications of the ACM}, 59(11):56--65, 2016.
-\label{zaharia2016spark}
 
 \item M. Zaharia, M. Chowdhury, T. Das, A. Dave, J. Ma, M. McCauly, M. J. Franklin,
 S. Shenker, and I. Stoica. Resilient distributed datasets: A fault-tolerant
 abstraction for in-memory cluster computing. In \textit{Proc. NSDI}, 2012.
-\label{zaharia2012rdd}
 
 \item J. Dean and S. Ghemawat. MapReduce: Simplified data processing on large
 clusters. \textit{Communications of the ACM}, 51(1):107--113, 2008.
-\label{dean2008mapreduce}
 
 \item REES46 eCommerce behavior data from multi-category store.
 \url{https://www.kaggle.com/datasets/mkechinov/ecommerce-behavior-data-from-multi-category-store}.
@@ -593,7 +590,6 @@ Accessed 2025.
 \item M. Armbrust, T. Das, J. Torres, B. Yavuz, S. Zeng, R. Xin, A. Ghodsi,
 I. Stoica, and M. Zaharia. Structured Streaming: A declarative API for real-time
 applications in Apache Spark. In \textit{Proc. SIGMOD}, 2018.
-\label{armbrust2018structured}
 
 \end{enumerate}
 \end{small}
