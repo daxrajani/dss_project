@@ -4,6 +4,10 @@
 **Course:** COEN 6731 Distributed Software Systems — Concordia University, Winter 2026
 **Repo:** https://github.com/daxrajani/dss_project
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/daxrajani/dss_project)
+
+> **No installation needed.** Click the badge above to open the project in a browser-based environment with Python, Java, and all dependencies pre-installed. See [Running in Codespaces](#running-in-codespaces) below.
+
 ---
 
 ## Overview
@@ -78,16 +82,32 @@ dss_project/
 
 ---
 
-## Prerequisites
+## Running in Codespaces
 
-1. **GCP account** with Dataproc and GCS APIs enabled
-2. **gcloud CLI** authenticated:
-   ```bash
-   gcloud auth login
-   gcloud config set project YOUR_PROJECT_ID
-   ```
-3. **GCS bucket** with dataset and scripts uploaded (see Setup below)
-4. **Python 3.10+** and a virtual environment for the dashboard/streaming demo
+The fastest way to run this project — no local installation required.
+
+1. Click **[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/daxrajani/dss_project)**
+2. Wait ~2 minutes for the environment to build (Python, Java, all packages install automatically)
+3. In the terminal that opens, run any of these:
+
+```bash
+# No GCP needed — works immediately
+bash demo.sh results          # benchmark results table + optimization summaries
+bash demo.sh stream           # real-time streaming anomaly detection (~60s)
+bash demo.sh perf             # regenerate all 6 performance charts
+python src/dashboard/app.py   # web dashboard — opens automatically at port 5000
+
+# Requires GCP authentication (run this first, then the commands below)
+gcloud auth login
+bash demo.sh cloud            # submit live pipeline to GCP Dataproc
+bash demo.sh analyze          # download results from GCS + show analytics charts
+```
+
+> The GCP project and bucket are pre-configured. For cloud commands, `gcloud auth login` is the only step needed.
+
+---
+
+## Prerequisites
 
 ---
 
