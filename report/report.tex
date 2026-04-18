@@ -54,6 +54,7 @@ Concordia University
 % ─────────────────────────────────────────────────────────────────────────────
 \begin{document}
 \maketitle
+\pagestyle{plain}
 
 % ── ABSTRACT ─────────────────────────────────────────────────────────────────
 \begin{abstract}
@@ -601,6 +602,10 @@ applications in Apache Spark. In \textit{Proc. SIGMOD}, 2018.
 \appendix
 \section{Contribution Table}
 
+The table below documents each team member's primary responsibilities across the
+project. P indicates the member who led that component. S indicates the member who
+assisted and reviewed. J indicates work done together throughout the project.
+
 \begin{table}[h]
 \centering
 \small
@@ -623,5 +628,64 @@ Report Writing                      & J & J \\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\section{Per-Stage Timing Breakdown}
+
+Table~\ref{tab:stages} shows how total pipeline time is distributed across the
+five stages for three representative configurations. ETL dominates at small data
+sizes because it performs three Parquet writes. Sessionization is the most
+expensive compute stage due to the full dataset sort by user and time. At larger
+data sizes, GCS write pressure causes ETL time to grow faster than the other stages.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Per-stage wall time (seconds) for three configurations on 5 workers.
+``Other'' includes Spark overhead and GCS metadata operations.}
+\label{tab:stages}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Stage & 1 GB & 5 GB & 10 GB \\
+\midrule
+ETL \& Enrichment    & 38.1  & 101.2 & 184.6 \\
+Sessionization       & 31.4  &  83.0 & 152.3 \\
+Funnel Analysis      & 22.7  &  54.4 &  96.1 \\
+Attribution          & 24.6  &  61.7 & 115.8 \\
+Anomaly Detection    & 18.3  &  42.1 &  74.9 \\
+Other (overhead)     & 121.8 &  67.3 &  50.3 \\
+\midrule
+\textbf{Total}       & \textbf{256.9} & \textbf{409.7} & \textbf{674.0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Optimization Results Summary}
+
+Table~\ref{tab:opts} summarizes all three optimization experiments. All runs used
+5 workers and the 5 GB dataset to keep the comparison fair. The baseline for each
+experiment is the default Spark behavior without any hint or partitioning change.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Optimization experiment results. All runs: 5 workers, 5 GB dataset.}
+\label{tab:opts}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Experiment & Baseline & Optimized & Speedup \\
+\midrule
+Broadcast join (attribution)   & 11.33s & 7.15s  & 1.58x \\
+Partition pruning (single day) &  4.25s & 1.37s  & 3.11x \\
+Partition pruning (7-day)      &  3.09s & 1.78s  & 1.73x \\
+Skew salting (attribution)     & 34.60s & 79.10s & 0.44x \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Broadcast join and partition pruning both gave meaningful speedups with no change
+to output correctness. Skew salting was slower because the data is uniformly
+distributed and the salting overhead outweighed any straggler benefit. This
+combination of positive and negative results provides a realistic picture of
+where Spark optimization techniques help and where they do not.
 
 \end{document}
