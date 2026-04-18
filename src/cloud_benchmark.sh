@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# cloud_benchmark.sh — Create a Dataproc cluster, run cloud_pipeline.py, tear down.
+# cloud_benchmark.sh — Ensure Dataproc cluster is running, submit cloud_pipeline.py, then stop it.
+#
+# Cluster lifecycle:
+#   - If cluster does not exist  → create it
+#   - If cluster is STOPPED      → start it
+#   - If cluster is RUNNING      → use it as-is (no recreation needed)
+#   After the job finishes       → stop the cluster (not delete)
 #
 # Usage:
 #   bash src/cloud_benchmark.sh <WORKERS> <DATA_VARIANT>
@@ -21,16 +27,16 @@ DATA_VARIANT="${2:?Usage: $0 <WORKERS> <DATA_VARIANT>}"
 #   export GCP_PROJECT=your-project-id
 #   export GCS_BUCKET=gs://your-bucket
 #   export GCP_REGION=us-central1
+PROJECT="${GCP_PROJECT:-}"
 BUCKET="${GCS_BUCKET:-}"
 INPUT_CSV="${GCS_INPUT:-${BUCKET}/data/2019-Oct.csv}"
 SCRIPT_URI="${GCS_SCRIPTS:-${BUCKET}/scripts}/cloud_pipeline.py"
 REGION="${GCP_REGION:-us-central1}"
-# GCP free-tier global quota: CPUS_ALL_REGIONS = 12 (covers all machine families).
-# n2-standard-2 (2 vCPU, 8 GB): 2w=6 CPUs, 4w=10 CPUs, 5w=12 CPUs — all within quota.
 MASTER_TYPE="n2-standard-2"
 WORKER_TYPE="n2-standard-2"
 IMAGE_VERSION="2.1-debian11"
-CLUSTER_NAME="dss-bench-${WORKERS}w-${DATA_VARIANT}-$$"
+# Stable cluster name (no PID suffix) so the same cluster is reused across runs
+CLUSTER_NAME="dss-bench-${WORKERS}w-${DATA_VARIANT}"
 RESULTS_DIR="results"
 
 mkdir -p "${RESULTS_DIR}"
@@ -58,30 +64,52 @@ echo "   Output       : ${OUTPUT_PATH}"
 echo "   Log          : ${LOG_FILE}"
 echo "================================================================"
 
-PROJECT="${GCP_PROJECT:-}"
+# ── Helpers ───────────────────────────────────────────────────────────────────
+_pf() { [[ -n "$PROJECT" ]] && echo "--project=$PROJECT" || echo ""; }
 
-# ── Create cluster ────────────────────────────────────────────────────────────
-echo "[$(date '+%H:%M:%S')] Creating Dataproc cluster ..."
-gcloud dataproc clusters create "${CLUSTER_NAME}" \
-  --region="${REGION}" \
-  ${PROJECT:+--project="${PROJECT}"} \
-  --master-machine-type="${MASTER_TYPE}" \
-  --master-boot-disk-size=50GB \
-  --num-workers="${WORKERS}" \
-  --worker-machine-type="${WORKER_TYPE}" \
-  --worker-boot-disk-size=50GB \
-  --image-version="${IMAGE_VERSION}" \
-  --optional-components=JUPYTER \
-  --enable-component-gateway \
-  2>&1 | tee -a "${LOG_FILE}"
+_cluster_state() {
+    gcloud dataproc clusters describe "${CLUSTER_NAME}" \
+        --region="${REGION}" $(_pf) \
+        --format="value(status.state)" 2>/dev/null || echo "NOT_FOUND"
+}
 
-echo "[$(date '+%H:%M:%S')] Cluster created."
+# ── Ensure cluster is running ─────────────────────────────────────────────────
+STATE=$(_cluster_state)
+echo "[$(date '+%H:%M:%S')] Cluster state: ${STATE}"
+
+if [[ "$STATE" == "NOT_FOUND" ]]; then
+    echo "[$(date '+%H:%M:%S')] Cluster not found — creating ..."
+    gcloud dataproc clusters create "${CLUSTER_NAME}" \
+      --region="${REGION}" $(_pf) \
+      --master-machine-type="${MASTER_TYPE}" \
+      --master-boot-disk-size=50GB \
+      --num-workers="${WORKERS}" \
+      --worker-machine-type="${WORKER_TYPE}" \
+      --worker-boot-disk-size=50GB \
+      --image-version="${IMAGE_VERSION}" \
+      --optional-components=JUPYTER \
+      --enable-component-gateway \
+      2>&1 | tee -a "${LOG_FILE}"
+    echo "[$(date '+%H:%M:%S')] Cluster created."
+elif [[ "$STATE" == "STOPPED" ]]; then
+    echo "[$(date '+%H:%M:%S')] Cluster is stopped — starting ..."
+    gcloud dataproc clusters start "${CLUSTER_NAME}" \
+      --region="${REGION}" $(_pf) \
+      2>&1 | tee -a "${LOG_FILE}"
+    echo "[$(date '+%H:%M:%S')] Cluster started."
+elif [[ "$STATE" == "RUNNING" ]]; then
+    echo "[$(date '+%H:%M:%S')] Cluster already running — reusing existing cluster."
+else
+    echo "[$(date '+%H:%M:%S')] Cluster is in state ${STATE} — waiting ..."
+    gcloud dataproc clusters wait "${CLUSTER_NAME}" \
+      --region="${REGION}" $(_pf) 2>/dev/null || true
+fi
 
 # ── Submit PySpark job ────────────────────────────────────────────────────────
 echo "[$(date '+%H:%M:%S')] Submitting PySpark job ..."
 gcloud dataproc jobs submit pyspark "${SCRIPT_URI}" \
   --cluster="${CLUSTER_NAME}" \
-  --region="${REGION}" \
+  --region="${REGION}" $(_pf) \
   -- \
   --input="${INPUT_CSV}" \
   --output="${OUTPUT_PATH}" \
@@ -91,14 +119,13 @@ gcloud dataproc jobs submit pyspark "${SCRIPT_URI}" \
 JOB_EXIT=${PIPESTATUS[0]}
 echo "[$(date '+%H:%M:%S')] Job finished with exit code ${JOB_EXIT}."
 
-# ── Delete cluster (always, even on job failure) ──────────────────────────────
-echo "[$(date '+%H:%M:%S')] Deleting cluster ${CLUSTER_NAME} ..."
-gcloud dataproc clusters delete "${CLUSTER_NAME}" \
-  --region="${REGION}" \
-  --quiet \
+# ── Stop cluster (keep it for next run — no need to recreate) ─────────────────
+echo "[$(date '+%H:%M:%S')] Stopping cluster ${CLUSTER_NAME} (not deleting — reuse next time) ..."
+gcloud dataproc clusters stop "${CLUSTER_NAME}" \
+  --region="${REGION}" $(_pf) \
   2>&1 | tee -a "${LOG_FILE}"
 
-echo "[$(date '+%H:%M:%S')] Cluster deleted."
+echo "[$(date '+%H:%M:%S')] Cluster stopped."
 echo "================================================================"
 echo " Done. Log saved to ${LOG_FILE}"
 echo "================================================================"

@@ -59,18 +59,41 @@ demo_cloud() {
     echo -e "${YELLOW}Output   :${RESET} $BUCKET/results/demo_run"
     echo ""
 
-    echo -e "${GREEN}Checking cluster status...${RESET}"
-    $GCLOUD dataproc clusters describe $CLUSTER \
-        --region=$REGION --project=$PROJECT \
-        --format="value(status.state)" 2>/dev/null | \
-        xargs -I{} echo -e "  Cluster state: ${BOLD}{}${RESET}"
+    # ── Ensure cluster is running (create / start / reuse) ──────────────
+    _pf() { [[ -n "$PROJECT" ]] && echo "--project=$PROJECT" || echo ""; }
+
+    STATE=$($GCLOUD dataproc clusters describe $CLUSTER \
+        --region=$REGION $(_pf) \
+        --format="value(status.state)" 2>/dev/null || echo "NOT_FOUND")
+
+    echo -e "${GREEN}Cluster state: ${BOLD}${STATE}${RESET}"
+
+    if [[ "$STATE" == "NOT_FOUND" ]]; then
+        echo -e "${GREEN}Cluster not found — creating...${RESET}"
+        $GCLOUD dataproc clusters create $CLUSTER \
+            --region=$REGION $(_pf) \
+            --master-machine-type=n2-standard-2 \
+            --num-workers=5 \
+            --worker-machine-type=n2-standard-2 \
+            --image-version=2.1-debian11 \
+            --optional-components=JUPYTER \
+            --enable-component-gateway
+        echo -e "${GREEN}Cluster created.${RESET}"
+    elif [[ "$STATE" == "STOPPED" ]]; then
+        echo -e "${GREEN}Cluster is stopped — starting...${RESET}"
+        $GCLOUD dataproc clusters start $CLUSTER \
+            --region=$REGION $(_pf)
+        echo -e "${GREEN}Cluster started.${RESET}"
+    else
+        echo -e "${GREEN}Cluster is ${STATE} — proceeding.${RESET}"
+    fi
     echo ""
 
+    # ── Submit pipeline job ──────────────────────────────────────────────
     echo -e "${GREEN}Submitting pipeline job to Dataproc...${RESET}\n"
     $GCLOUD dataproc jobs submit pyspark $SCRIPTS/cloud_pipeline.py \
         --cluster=$CLUSTER \
-        --region=$REGION \
-        --project=$PROJECT \
+        --region=$REGION $(_pf) \
         -- --input  $INPUT \
            --output $BUCKET/results/demo_run \
            --sample-fraction 0.2
@@ -79,6 +102,13 @@ demo_cloud() {
     echo ""
     echo -e "${YELLOW}Listing output files in GCS:${RESET}"
     $GSUTIL ls $BUCKET/results/demo_run/ 2>/dev/null
+
+    # ── Stop cluster (keep for next run) ─────────────────────────────────
+    echo ""
+    echo -e "${GREEN}Stopping cluster (keeping it for next run)...${RESET}"
+    $GCLOUD dataproc clusters stop $CLUSTER \
+        --region=$REGION $(_pf)
+    echo -e "${GREEN}Cluster stopped. Run again to reuse without recreating.${RESET}"
 }
 
 # =============================================================================
