@@ -182,23 +182,53 @@ demo_results() {
 }
 
 # =============================================================================
+#  ANALYZE — download GCS pipeline output and show analytics results
+# =============================================================================
+demo_analyze() {
+    header "DSS PIPELINE ANALYTICS RESULTS"
+
+    GCS_OUTPUT="${2:-${BUCKET}/results/demo_run}"
+
+    if [[ -z "$BUCKET" && -z "$2" ]]; then
+        echo -e "${YELLOW}Usage: bash demo.sh analyze gs://YOUR_BUCKET/results/demo_run${RESET}"
+        echo ""
+        echo "  Or set GCS_BUCKET and re-run:"
+        echo "    export GCS_BUCKET=gs://your-bucket"
+        echo "    bash demo.sh analyze"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}GCS output path : ${RESET}$GCS_OUTPUT"
+    echo -e "${YELLOW}Charts will be saved to : ${RESET}results/demo_analysis/"
+    echo ""
+
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    $PYTHON "$SCRIPT_DIR/src/analyze_gcs_results.py" --gcs-output "$GCS_OUTPUT"
+}
+
+# =============================================================================
 #  ENTRY POINT
 # =============================================================================
 case "${1:-all}" in
     cloud)   demo_cloud ;;
     stream)  demo_stream ;;
     results) demo_results ;;
+    analyze) demo_analyze "$@" ;;
     all)
         demo_cloud
         echo ""
         demo_results
         ;;
     *)
-        echo "Usage: bash demo.sh [cloud|stream|results|all]"
+        echo "Usage: bash demo.sh [cloud|stream|results|analyze|all]"
         echo ""
         echo "  cloud   — Submit live pipeline to GCP Dataproc (shows all 5 stages running)"
         echo "  stream  — Real-time streaming anomaly detection demo (local, 60s)"
         echo "  results — Print benchmark table + optimization results"
+        echo "  analyze — Download GCS output + show funnel/attribution/anomaly results + charts"
         echo "  all     — Cloud + results (default)"
+        echo ""
+        echo "  analyze usage:"
+        echo "    bash demo.sh analyze gs://YOUR_BUCKET/results/demo_run"
         ;;
 esac
