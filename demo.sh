@@ -32,46 +32,60 @@ PYTHON=$(command -v python3 2>/dev/null || echo python3)
 GCLOUD=$(_find_tool gcloud)
 GSUTIL=$(_find_tool gsutil)
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RESULTS_DIR="results"
+CONFIG_FILE="$SCRIPT_DIR/gcp.conf"
 
 # ── Colours ─────────────────────────── (defined early so _gcp_setup can use them)
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'
 BOLD='\033[1m'; RESET='\033[0m'
 
+# ── Load gcp.conf if it exists ───────────────────────────────────────
+# gcp.conf is a simple KEY=value file (no export, no quotes needed).
+# It is .gitignored so each user has their own copy.
+_load_conf() {
+    [[ -f "$CONFIG_FILE" ]] || return
+    while IFS='=' read -r key val; do
+        # skip blank lines and comments
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        key="${key// /}"   # trim spaces
+        val="${val// /}"
+        # only set if not already in environment
+        [[ -z "${!key:-}" ]] && export "$key"="$val"
+    done < "$CONFIG_FILE"
+}
+_load_conf
+
 # ── Auto-detect GCP config, prompt for anything still missing ────────
 _gcloud_val() {
-    # Read a value from gcloud config (returns empty string on failure/unset)
     "$GCLOUD" config get-value "$1" 2>/dev/null | grep -v '^$' | grep -v '(unset)' || true
 }
 
 _gcp_setup() {
-    # 1. Project — env var → gcloud config → prompt
+    # Priority: env var (or gcp.conf via _load_conf) → gcloud config → prompt
+
+    # 1. Project
     PROJECT="${GCP_PROJECT:-}"
+    [[ -z "$PROJECT" ]] && PROJECT=$(_gcloud_val project)
     if [[ -z "$PROJECT" ]]; then
-        PROJECT=$(_gcloud_val project)
-    fi
-    if [[ -z "$PROJECT" ]]; then
-        echo -e "${YELLOW}GCP project not set. Enter your GCP project ID:${RESET}"
+        echo -e "${YELLOW}GCP project not found. Enter your GCP project ID:${RESET}"
         read -rp "  Project ID: " PROJECT
     fi
 
-    # 2. Region — env var → gcloud config → default us-central1
+    # 2. Region — falls back to us-central1
     REGION="${GCP_REGION:-}"
-    if [[ -z "$REGION" ]]; then
-        REGION=$(_gcloud_val compute/region)
-    fi
+    [[ -z "$REGION" ]] && REGION=$(_gcloud_val compute/region)
     REGION="${REGION:-us-central1}"
 
-    # 3. Bucket — env var → prompt (no reliable auto-detect)
+    # 3. Bucket
     BUCKET="${GCS_BUCKET:-}"
     if [[ -z "$BUCKET" ]]; then
-        echo -e "${YELLOW}GCS bucket not set. Enter your GCS bucket (e.g. gs://my-bucket):${RESET}"
+        echo -e "${YELLOW}GCS bucket not found. Enter your GCS bucket (e.g. gs://my-bucket):${RESET}"
         read -rp "  GCS bucket: " BUCKET
-        # Normalise — ensure gs:// prefix
         [[ "$BUCKET" != gs://* ]] && BUCKET="gs://${BUCKET}"
     fi
 
-    # 4. Derived paths (can be overridden individually)
+    # 4. Derived paths
     INPUT="${GCS_INPUT:-${BUCKET}/data/2019-Oct.csv}"
     SCRIPTS="${GCS_SCRIPTS:-${BUCKET}/scripts}"
     CLUSTER="${DATAPROC_CLUSTER:-dss-demo-5w}"
@@ -282,11 +296,14 @@ case "${1:-all}" in
         echo "    stream   — Real-time streaming anomaly detection (local, ~60s)"
         echo "    perf     — Regenerate all 6 performance charts from saved results"
         echo ""
-        echo "  Requires GCP (project + bucket auto-detected from gcloud config):"
+        echo "  Requires GCP:"
         echo "    cloud    — Submit live pipeline to GCP Dataproc (all 5 stages)"
         echo "    analyze  — Download GCS output and show funnel/attribution/anomaly results + charts"
         echo "    all      — cloud + results (default)"
         echo ""
-        echo "  If gcloud is not configured, cloud and analyze will prompt for project/bucket."
+        echo "  GCP config (project + bucket) is read from, in order:"
+        echo "    1. gcp.conf          — copy gcp.conf.template → gcp.conf and fill in your values"
+        echo "    2. gcloud config     — auto-detected if 'gcloud auth login' was run"
+        echo "    3. interactive prompt — asked once if still missing"
         ;;
 esac
