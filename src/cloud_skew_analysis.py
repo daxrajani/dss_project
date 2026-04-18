@@ -196,7 +196,7 @@ def partition_size_report(df, label):
 
 def main():
     parser = argparse.ArgumentParser()
-    _bucket = os.environ.get("GCS_BUCKET", "")
+    _bucket = os.environ.get("GCS_BUCKET", "gs://dss-project-dax")
     parser.add_argument("--input",  default=os.environ.get("GCS_INPUT",  f"{_bucket}/data/2019-Oct.csv"))
     parser.add_argument("--output", default=os.environ.get("GCS_OUTPUT", f"{_bucket}/results/skew_analysis"))
     parser.add_argument("--sample-fraction", type=float, default=0.2)

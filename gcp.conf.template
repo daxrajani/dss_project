@@ -1,17 +1,17 @@
-# DSS Project — GCP configuration
+# DSS Project — GCP configuration override (optional)
 # ─────────────────────────────────────────────────────────────────────
-# Copy this file to gcp.conf and fill in your values:
+# The project and bucket are already pre-configured in the scripts.
+# You do NOT need this file to run the demo.
+#
+# Only create gcp.conf if you want to point the scripts at a
+# different GCP project or bucket:
 #
 #   cp gcp.conf.template gcp.conf
+#   # then edit gcp.conf with your own values
 #
 # gcp.conf is .gitignored — it stays on your machine only.
 # ─────────────────────────────────────────────────────────────────────
 
-# Your GCP project ID  (find it at console.cloud.google.com)
-GCP_PROJECT = your-project-id
-
-# Your GCS bucket  (include the gs:// prefix)
-GCS_BUCKET = gs://your-bucket-name
-
-# Region where your Dataproc cluster runs  (default: us-central1)
-GCP_REGION = us-central1
+# GCP_PROJECT = your-project-id
+# GCS_BUCKET  = gs://your-bucket-name
+# GCP_REGION  = us-central1

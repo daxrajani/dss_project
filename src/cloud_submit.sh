@@ -41,15 +41,14 @@ if [[ "$DATA_SIZE" != "1gb" && "$DATA_SIZE" != "5gb" && "$DATA_SIZE" != "10gb" ]
 fi
 
 # ---------------------------------------------------------------------------
-# Config — override via environment variables
-#   export GCP_PROJECT=your-project-id
-#   export GCS_BUCKET=gs://your-bucket
-#   export GCP_REGION=us-central1
+# Config (pre-configured — no setup needed)
+#   Defaults point to the project and bucket already deployed for this submission.
+#   Override any value by setting the matching environment variable beforehand.
 # ---------------------------------------------------------------------------
-PROJECT="${GCP_PROJECT:-}"
+PROJECT="${GCP_PROJECT:-project-a0b2f7d8-d4bf-4557-923}"
 REGION="${GCP_REGION:-us-central1}"
 ZONE="${GCP_ZONE:-us-central1-a}"
-BUCKET="${GCS_BUCKET:-}"
+BUCKET="${GCS_BUCKET:-gs://dss-project-dax}"
 CLUSTER_NAME="dss-bench-${CLUSTER_SIZE}w"
 MACHINE_TYPE="n1-standard-4"
 

@@ -42,10 +42,10 @@ def _gcloud_config(key):
     val = r.stdout.strip()
     return val if val and val != "(unset)" else ""
 
-PROJECT = os.environ.get("GCP_PROJECT", "") or _gcloud_config("project")
+PROJECT = os.environ.get("GCP_PROJECT", "") or _gcloud_config("project") or "project-a0b2f7d8-d4bf-4557-923"
 REGION  = os.environ.get("GCP_REGION",  "") or _gcloud_config("compute/region") or "us-central1"
 ZONE    = os.environ.get("GCP_ZONE",    "") or _gcloud_config("compute/zone")   or "us-central1-f"
-BUCKET  = os.environ.get("GCS_BUCKET",  "")
+BUCKET  = os.environ.get("GCS_BUCKET",  "") or "gs://dss-project-dax"
 
 def _detect_cluster():
     """Auto-detect cluster: prefer DATAPROC_CLUSTER env var, then find first

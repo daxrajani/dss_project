@@ -11,8 +11,8 @@
 #    bash demo.sh analyze     — Download GCS results and show analytics + charts
 #    bash demo.sh all         — Cloud + results (default)
 #
-#  GCP config is auto-detected from 'gcloud config'.
-#  You will only be prompted for project/bucket if not already configured.
+#  GCP project and bucket are pre-configured — no setup needed.
+#  Only prerequisite for cloud/analyze modes: gcloud auth login
 # =============================================================================
 
 # ── Resolve gcloud/gsutil from PATH or common locations ──────────────
@@ -34,62 +34,22 @@ GSUTIL=$(_find_tool gsutil)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RESULTS_DIR="results"
-CONFIG_FILE="$SCRIPT_DIR/gcp.conf"
 
-# ── Colours ─────────────────────────── (defined early so _gcp_setup can use them)
+# ── Colours ───────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'
 BOLD='\033[1m'; RESET='\033[0m'
 
-# ── Load gcp.conf if it exists ───────────────────────────────────────
-# gcp.conf is a simple KEY=value file (no export, no quotes needed).
-# It is .gitignored so each user has their own copy.
-_load_conf() {
-    [[ -f "$CONFIG_FILE" ]] || return
-    while IFS='=' read -r key val; do
-        # skip blank lines and comments
-        [[ -z "$key" || "$key" == \#* ]] && continue
-        key="${key// /}"   # trim spaces
-        val="${val// /}"
-        # only set if not already in environment
-        [[ -z "${!key:-}" ]] && export "$key"="$val"
-    done < "$CONFIG_FILE"
-}
-_load_conf
-
-# ── Auto-detect GCP config, prompt for anything still missing ────────
-_gcloud_val() {
-    "$GCLOUD" config get-value "$1" 2>/dev/null | grep -v '^$' | grep -v '(unset)' || true
-}
-
+# ── GCP defaults (pre-configured — no setup needed) ──────────────────────────
+#   The project, bucket, and data are already deployed on GCP.
+#   Just run:  bash demo.sh cloud   — and it works immediately.
+#   Override any value by setting the matching environment variable beforehand.
 _gcp_setup() {
-    # Priority: env var (or gcp.conf via _load_conf) → gcloud config → prompt
-
-    # 1. Project
-    PROJECT="${GCP_PROJECT:-}"
-    [[ -z "$PROJECT" ]] && PROJECT=$(_gcloud_val project)
-    if [[ -z "$PROJECT" ]]; then
-        echo -e "${YELLOW}GCP project not found. Enter your GCP project ID:${RESET}"
-        read -rp "  Project ID: " PROJECT
-    fi
-
-    # 2. Region — falls back to us-central1
-    REGION="${GCP_REGION:-}"
-    [[ -z "$REGION" ]] && REGION=$(_gcloud_val compute/region)
-    REGION="${REGION:-us-central1}"
-
-    # 3. Bucket
-    BUCKET="${GCS_BUCKET:-}"
-    if [[ -z "$BUCKET" ]]; then
-        echo -e "${YELLOW}GCS bucket not found. Enter your GCS bucket (e.g. gs://my-bucket):${RESET}"
-        read -rp "  GCS bucket: " BUCKET
-        [[ "$BUCKET" != gs://* ]] && BUCKET="gs://${BUCKET}"
-    fi
-
-    # 4. Derived paths
-    INPUT="${GCS_INPUT:-${BUCKET}/data/2019-Oct.csv}"
+    PROJECT="${GCP_PROJECT:-project-a0b2f7d8-d4bf-4557-923}"
+    REGION="${GCP_REGION:-us-central1}"
+    BUCKET="${GCS_BUCKET:-gs://dss-project-dax}"
+    INPUT="${GCS_INPUT:-${BUCKET}/data/full/2019-Oct.csv}"
     SCRIPTS="${GCS_SCRIPTS:-${BUCKET}/scripts}"
     CLUSTER="${DATAPROC_CLUSTER:-dss-demo-5w}"
-
     export PROJECT REGION BUCKET INPUT SCRIPTS CLUSTER
 }
 
@@ -301,9 +261,8 @@ case "${1:-all}" in
         echo "    analyze  — Download GCS output and show funnel/attribution/anomaly results + charts"
         echo "    all      — cloud + results (default)"
         echo ""
-        echo "  GCP config (project + bucket) is read from, in order:"
-        echo "    1. gcp.conf          — copy gcp.conf.template → gcp.conf and fill in your values"
-        echo "    2. gcloud config     — auto-detected if 'gcloud auth login' was run"
-        echo "    3. interactive prompt — asked once if still missing"
+        echo "  GCP config is pre-set — no configuration needed."
+        echo "  The project and bucket are already baked in."
+        echo "  Only prerequisite: gcloud auth login (to authenticate with GCP)."
         ;;
 esac

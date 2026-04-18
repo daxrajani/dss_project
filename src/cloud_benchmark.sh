@@ -23,13 +23,12 @@ set -euo pipefail
 WORKERS="${1:?Usage: $0 <WORKERS> <DATA_VARIANT>}"
 DATA_VARIANT="${2:?Usage: $0 <WORKERS> <DATA_VARIANT>}"
 
-# ── Config — override via environment variables ───────────────────────────────
-#   export GCP_PROJECT=your-project-id
-#   export GCS_BUCKET=gs://your-bucket
-#   export GCP_REGION=us-central1
-PROJECT="${GCP_PROJECT:-}"
-BUCKET="${GCS_BUCKET:-}"
-INPUT_CSV="${GCS_INPUT:-${BUCKET}/data/2019-Oct.csv}"
+# ── Config (pre-configured — no setup needed) ────────────────────────────────
+#   Defaults point to the project and bucket already deployed for this submission.
+#   Override any value by setting the matching environment variable beforehand.
+PROJECT="${GCP_PROJECT:-project-a0b2f7d8-d4bf-4557-923}"
+BUCKET="${GCS_BUCKET:-gs://dss-project-dax}"
+INPUT_CSV="${GCS_INPUT:-${BUCKET}/data/full/2019-Oct.csv}"
 SCRIPT_URI="${GCS_SCRIPTS:-${BUCKET}/scripts}/cloud_pipeline.py"
 REGION="${GCP_REGION:-us-central1}"
 MASTER_TYPE="n2-standard-2"
