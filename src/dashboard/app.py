@@ -302,9 +302,24 @@ def last_run_info():
 
 @app.route("/api/submit", methods=["POST"])
 def submit():
-    data     = request.get_json(silent=True) or {}
-    fraction = float(data.get("fraction", 0.2))
-    fraction = max(0.05, min(1.0, fraction))   # clamp to [5%, 100%]
+    # Fixed config: 5 workers, 1 GB sample (20%) — no options needed
+    fraction = 0.2
+
+    # Wait for cluster to be RUNNING before submitting (handles STARTING state)
+    for _ in range(30):
+        desc = subprocess.run(
+            [GCLOUD, "dataproc", "clusters", "describe", CLUSTER,
+             f"--region={REGION}", f"--project={PROJECT}",
+             "--format=value(status.state)"],
+            capture_output=True, text=True)
+        state = desc.stdout.strip()
+        if state == "RUNNING":
+            break
+        if state in ("ERROR", "DELETING", ""):
+            return jsonify({"error": f"Cluster is in state {state}, cannot submit job."}), 500
+        time.sleep(10)   # still STARTING/CREATING — wait and retry
+    else:
+        return jsonify({"error": "Cluster did not reach RUNNING state in time."}), 500
 
     r = subprocess.run(
         [GCLOUD, "dataproc", "jobs", "submit", "pyspark",

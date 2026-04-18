@@ -336,34 +336,9 @@ main {
     </div>
   </div>
 
-  <!-- Config panel -->
-  <div>
-    <div class="sec-lbl">Job Configuration</div>
-    <div class="cfg-box">
-      <!-- Workers -->
-      <div class="cfg-row">
-        <span class="cfg-lbl">Workers</span>
-        <div class="pills" id="worker-pills">
-          <button class="pill" data-w="1" onclick="selWorker(1,this)">1</button>
-          <button class="pill" data-w="2" onclick="selWorker(2,this)">2</button>
-          <button class="pill" data-w="3" onclick="selWorker(3,this)">3</button>
-          <button class="pill" data-w="4" onclick="selWorker(4,this)">4</button>
-          <button class="pill" data-w="5" onclick="selWorker(5,this)">5</button>
-        </div>
-        <button id="apply-btn" onclick="resizeCluster()" style="display:none">Apply</button>
-      </div>
-      <!-- Data size -->
-      <div class="cfg-row">
-        <span class="cfg-lbl">Data Size</span>
-        <div class="pills" id="size-pills">
-          <button class="pill" data-f="0.10" onclick="selSize(0.10,this)">~500 MB</button>
-          <button class="pill active" data-f="0.20" onclick="selSize(0.20,this)">~1 GB</button>
-          <button class="pill" data-f="0.50" onclick="selSize(0.50,this)">~2.5 GB</button>
-          <button class="pill" data-f="1.00" onclick="selSize(1.00,this)">5.3 GB</button>
-        </div>
-      </div>
-      <div class="cfg-note" id="cfg-note">5 workers · ~1 GB · n1-standard-2</div>
-    </div>
+  <!-- Fixed config note -->
+  <div class="cfg-note" style="margin:10px 0 8px;">
+    5 workers · ~1 GB (8.5 M rows) · n1-standard-2
   </div>
 
   <button id="run-btn" onclick="submitJob()">▶ &nbsp;Run Full Pipeline</button>
@@ -573,12 +548,8 @@ let activeStage = null;
 let stageTimes = {};
 let vmRefreshTimer = null;
 let charts = {};
-let currentWorkers = 0;    // actual running worker count from cluster
-let selectedWorkers = 0;   // what user has clicked (0 = unset)
-let selFraction = 0.20;
-let cachedAnalytics = null;       // last fetched analytics data
-let resizePollTimer = null;
-const SIZE_LABELS = {0.10:'~500 MB',0.20:'~1 GB',0.50:'~2.5 GB',1.00:'5.3 GB'};
+let currentWorkers = 0;
+let cachedAnalytics = null;
 
 // ── Tab navigation ─────────────────────────────────────
 function showTab(id, btn) {
@@ -603,111 +574,10 @@ function showAnTab(id, btn) {
   _renderSubTab(id);
 }
 
-// ── Config panel ───────────────────────────────────────
-
-function selWorker(n, btn) {
-  selectedWorkers = n;
-  _refreshWorkerPillStyles();
-  // Show Apply only if selection differs from current
-  const applyBtn = document.getElementById('apply-btn');
-  applyBtn.style.display = (selectedWorkers !== currentWorkers) ? 'inline-block' : 'none';
-  updateCfgNote();
-}
-
-function selSize(f, btn) {
-  selFraction = f;
-  document.querySelectorAll('#size-pills .pill').forEach(p => p.classList.remove('active'));
-  btn.classList.add('active');
-  updateCfgNote();
-}
-
-function updateCfgNote() {
-  const w = currentWorkers || '?';
-  const sel = selectedWorkers && selectedWorkers !== currentWorkers ? ` → ${selectedWorkers}` : '';
-  document.getElementById('cfg-note').textContent =
-    `${w}${sel} worker${w!==1?'s':''} · ${SIZE_LABELS[selFraction]||Math.round(selFraction*100)+'%'} · n1-standard-2`;
-}
-
-function _refreshWorkerPillStyles() {
-  document.querySelectorAll('#worker-pills .pill').forEach(p => {
-    const w = parseInt(p.dataset.w);
-    p.classList.remove('current','active');
-    if (w === currentWorkers)  p.classList.add('current');
-    if (w === selectedWorkers && selectedWorkers !== currentWorkers) p.classList.add('active');
-  });
-}
-
-// Called by loadNodes — syncs pill display to actual cluster state
+// Called by loadNodes — tracks actual worker count
 function syncWorkerPills(nodes) {
   const wCount = nodes.filter(n => n.type==='worker' && n.status==='RUNNING').length;
-  if (wCount < 1) return;
-  currentWorkers  = wCount;
-  if (!selectedWorkers) selectedWorkers = wCount; // first load
-  _refreshWorkerPillStyles();
-  // Hide Apply if selection now matches current
-  const applyBtn = document.getElementById('apply-btn');
-  if (selectedWorkers === currentWorkers) applyBtn.style.display = 'none';
-  updateCfgNote();
-}
-
-async function resizeCluster() {
-  const btn = document.getElementById('apply-btn');
-  btn.disabled = true; btn.textContent = `Applying ${selectedWorkers}w…`;
-  appendLog(`Requesting resize to ${selectedWorkers} workers (takes ~2 min)…`, 'l-recv');
-
-  try {
-    const r = await fetch('/api/resize', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({workers: selectedWorkers})});
-    const d = await r.json();
-    if (!d.ok) {
-      appendLog('Resize request failed: '+(d.error||'unknown'), 'l-fail');
-      btn.disabled=false; btn.textContent='Apply';
-      return;
-    }
-  } catch(e) {
-    appendLog('Resize error: '+e.message, 'l-fail');
-    btn.disabled=false; btn.textContent='Apply';
-    return;
-  }
-
-  // Poll resize-status until done or failed
-  if (resizePollTimer) clearInterval(resizePollTimer);
-  const target = selectedWorkers;
-
-  resizePollTimer = setInterval(async () => {
-    try {
-      const st = await fetch('/api/resize-status').then(r=>r.json());
-
-      if (st.status === 'done') {
-        clearInterval(resizePollTimer);
-        appendLog(`✓ Cluster resized to ${target} workers successfully.`, 'l-tot');
-        btn.style.display = 'none';
-        btn.disabled = false; btn.textContent = 'Apply';
-        loadNodes();
-
-      } else if (st.status === 'failed') {
-        clearInterval(resizePollTimer);
-        btn.disabled = false; btn.textContent = 'Apply';
-
-        if (st.error_type === 'capacity') {
-          appendLog(`Zone capacity insufficient for ${target} workers. Try a smaller number.`, 'l-fail');
-        } else {
-          appendLog(`Resize failed: ${st.error}`, 'l-fail');
-        }
-        // Revert selection to current — fetch actual count from cluster first
-        try {
-          const ci = await fetch('/api/cluster-workers').then(r=>r.json());
-          if (ci.workers > 0) currentWorkers = ci.workers;
-        } catch(_) {}
-        selectedWorkers = currentWorkers;
-        _refreshWorkerPillStyles();
-        btn.style.display = 'none';
-        loadNodes();
-      }
-      // else still "running" — keep polling
-    } catch(_) {}
-  }, 5000);
+  if (wCount > 0) currentWorkers = wCount;
 }
 
 // ── Node cards ──────────────────────────────────────────
@@ -852,11 +722,13 @@ async function submitJob() {
   document.getElementById('mbar').classList.remove('show');
   document.getElementById('an-badge').classList.remove('show');
   stageTimes = {};
+  appendLog('5 workers · ~1 GB · n1-standard-2', 'l-plain');
+  appendLog('Starting cluster if needed and waiting until RUNNING…', 'l-plain');
 
   try {
     const r = await fetch('/api/submit',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({fraction: selFraction})});
+      body:JSON.stringify({})});
     const d = await r.json();
     if (!r.ok || d.error) {
       appendLog('Submit error: '+(d.error||'unknown'), 'l-fail');
@@ -865,7 +737,7 @@ async function submitJob() {
     }
     btn.textContent = '⚙ Running…';
     appendLog('Job submitted → '+d.job_id, 'l-summ');
-    appendLog('Waiting for Dataproc to schedule…','l-plain');
+    appendLog('Streaming Dataproc job output…','l-plain');
     openStream(d.job_id);
   } catch(e) {
     appendLog('Error: '+e.message,'l-fail');
