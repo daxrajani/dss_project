@@ -45,12 +45,58 @@ BOLD='\033[1m'; RESET='\033[0m'
 #   Override any value by setting the matching environment variable beforehand.
 _gcp_setup() {
     PROJECT="${GCP_PROJECT:-project-a0b2f7d8-d4bf-4557-923}"
-    REGION="${GCP_REGION:-us-central1}"
     BUCKET="${GCS_BUCKET:-gs://dss-project-dax}"
     INPUT="${GCS_INPUT:-${BUCKET}/data/full/2019-Oct.csv}"
     SCRIPTS="${GCS_SCRIPTS:-${BUCKET}/scripts}"
     CLUSTER="${DATAPROC_CLUSTER:-dss-demo-5w}"
-    export PROJECT REGION BUCKET INPUT SCRIPTS CLUSTER
+    export PROJECT BUCKET INPUT SCRIPTS CLUSTER
+}
+
+# ── Region fallback list — tried in order until one has capacity ──────────────
+_FALLBACK_REGIONS=(
+    "us-central1" "us-east1" "us-east4" "us-west1" "us-west2"
+    "europe-west1" "europe-west4" "asia-east1"
+)
+
+_pf() { [[ -n "$PROJECT" ]] && echo "--project=$PROJECT" || echo ""; }
+
+# Find cluster across all regions → prints "REGION STATE" or "NOT_FOUND"
+_find_cluster() {
+    local name="$1"
+    for r in "${_FALLBACK_REGIONS[@]}"; do
+        local st
+        st=$($GCLOUD dataproc clusters describe "$name" \
+            --region="$r" $(_pf) \
+            --format="value(status.state)" 2>/dev/null || true)
+        [[ -n "$st" ]] && echo "$r $st" && return
+    done
+    echo "NOT_FOUND"
+}
+
+# Create cluster, trying each region until one has resources
+_create_cluster() {
+    local name="$1"; shift
+    local extra_args=("$@")
+    for r in "${_FALLBACK_REGIONS[@]}"; do
+        echo -e "${GREEN}  Trying region ${r} ...${RESET}"
+        local out
+        out=$($GCLOUD dataproc clusters create "$name" \
+            --region="$r" $(_pf) "${extra_args[@]}" 2>&1)
+        local code=$?
+        if [[ $code -eq 0 ]]; then
+            REGION="$r"
+            echo -e "${GREEN}  Cluster created in ${REGION}.${RESET}"
+            return 0
+        elif echo "$out" | grep -qiE \
+            "does not have enough resources|UNAVAILABLE|RESOURCE_EXHAUSTED|quota exceeded|insufficient"; then
+            echo -e "${YELLOW}  Region ${r} out of resources — trying next ...${RESET}"
+        else
+            echo "$out"
+            return $code
+        fi
+    done
+    echo "ERROR: No region had available resources." >&2
+    return 1
 }
 
 header() { echo -e "\n${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"; echo -e "${BOLD}${CYAN}  $1${RESET}"; echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"; }
@@ -72,35 +118,32 @@ demo_cloud() {
     echo -e "${YELLOW}Output   :${RESET} $BUCKET/results/demo_run"
     echo ""
 
-    # ── Ensure cluster is running (create / start / reuse) ──────────────
-    _pf() { [[ -n "$PROJECT" ]] && echo "--project=$PROJECT" || echo ""; }
+    # ── Ensure cluster is running ────────────────────────────────────────
+    FOUND=$(_find_cluster "$CLUSTER")
 
-    STATE=$($GCLOUD dataproc clusters describe $CLUSTER \
-        --region=$REGION $(_pf) \
-        --format="value(status.state)" 2>/dev/null || echo "NOT_FOUND")
-
-    echo -e "${GREEN}Cluster state: ${BOLD}${STATE}${RESET}"
-
-    if [[ "$STATE" == "NOT_FOUND" ]]; then
-        echo -e "${GREEN}Cluster not found — creating...${RESET}"
-        $GCLOUD dataproc clusters create $CLUSTER \
-            --region=$REGION $(_pf) \
+    if [[ "$FOUND" == "NOT_FOUND" ]]; then
+        echo -e "${GREEN}Cluster not found — creating (auto-selecting region)...${RESET}"
+        _create_cluster "$CLUSTER" \
             --master-machine-type=n2-standard-2 \
             --num-workers=5 \
             --worker-machine-type=n2-standard-2 \
             --image-version=2.1-debian11 \
             --optional-components=JUPYTER \
             --enable-component-gateway
-        echo -e "${GREEN}Cluster created.${RESET}"
-    elif [[ "$STATE" == "STOPPED" ]]; then
-        echo -e "${GREEN}Cluster is stopped — starting...${RESET}"
-        $GCLOUD dataproc clusters start $CLUSTER \
-            --region=$REGION $(_pf)
+    elif [[ "$FOUND" =~ ^([^ ]+)\ STOPPED$ ]]; then
+        REGION="${BASH_REMATCH[1]}"
+        echo -e "${GREEN}Cluster found STOPPED in ${REGION} — starting...${RESET}"
+        $GCLOUD dataproc clusters start $CLUSTER --region=$REGION $(_pf)
         echo -e "${GREEN}Cluster started.${RESET}"
+    elif [[ "$FOUND" =~ ^([^ ]+)\ RUNNING$ ]]; then
+        REGION="${BASH_REMATCH[1]}"
+        echo -e "${GREEN}Cluster already RUNNING in ${REGION} — reusing.${RESET}"
     else
-        echo -e "${GREEN}Cluster is ${STATE} — proceeding.${RESET}"
+        REGION=$(echo "$FOUND" | awk '{print $1}')
+        echo -e "${GREEN}Cluster is in state $(echo "$FOUND" | awk '{print $2}') in ${REGION}.${RESET}"
     fi
-    echo ""
+
+    echo -e "${CYAN}Region   : ${REGION}${RESET}\n"
 
     # ── Submit pipeline job ──────────────────────────────────────────────
     echo -e "${GREEN}Submitting pipeline job to Dataproc...${RESET}\n"
@@ -119,8 +162,7 @@ demo_cloud() {
     # ── Stop cluster (keep for next run) ─────────────────────────────────
     echo ""
     echo -e "${GREEN}Stopping cluster (keeping it for next run)...${RESET}"
-    $GCLOUD dataproc clusters stop $CLUSTER \
-        --region=$REGION $(_pf)
+    $GCLOUD dataproc clusters stop $CLUSTER --region=$REGION $(_pf)
     echo -e "${GREEN}Cluster stopped. Run again to reuse without recreating.${RESET}"
 }
 
