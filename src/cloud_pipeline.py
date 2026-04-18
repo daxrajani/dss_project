@@ -10,8 +10,8 @@ Inlines all 5 pipeline stages:
 
 Usage:
     spark-submit cloud_pipeline.py \
-        --input  gs://dss-project-dax/data/full/2019-Oct.csv \
-        --output gs://dss-project-dax/results/run1 \
+        --input  gs://YOUR_BUCKET/data/2019-Oct.csv \
+        --output gs://YOUR_BUCKET/results/run1 \
         [--sample-fraction 0.2]
 
 Sample fractions:

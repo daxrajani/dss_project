@@ -5,14 +5,15 @@ Runs on GCP Dataproc. Compares shuffle join vs broadcast join for attribution.
 Results written to GCS output path.
 
 Usage (via gcloud):
-    gcloud dataproc jobs submit pyspark gs://dss-project-dax/scripts/cloud_broadcast_join.py \
+    gcloud dataproc jobs submit pyspark gs://YOUR_BUCKET/scripts/cloud_broadcast_join.py \
         --cluster=<CLUSTER> --region=us-central1 \
-        -- --input gs://dss-project-dax/data/full/2019-Oct.csv \
-           --output gs://dss-project-dax/results/broadcast_join \
+        -- --input gs://YOUR_BUCKET/data/2019-Oct.csv \
+           --output gs://YOUR_BUCKET/results/broadcast_join \
            --sample-fraction 0.3
 """
 
 import argparse
+import os
 import time
 
 from pyspark.sql import SparkSession
@@ -109,8 +110,9 @@ def run_attribution(orders, session_refs, use_broadcast=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",  default="gs://dss-project-dax/data/full/2019-Oct.csv")
-    parser.add_argument("--output", default="gs://dss-project-dax/results/broadcast_join")
+    _bucket = os.environ.get("GCS_BUCKET", "")
+    parser.add_argument("--input",  default=os.environ.get("GCS_INPUT",  f"{_bucket}/data/2019-Oct.csv"))
+    parser.add_argument("--output", default=os.environ.get("GCS_OUTPUT", f"{_bucket}/results/broadcast_join"))
     parser.add_argument("--sample-fraction", type=float, default=0.3)
     args = parser.parse_args()
 

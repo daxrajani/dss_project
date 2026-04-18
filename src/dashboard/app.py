@@ -5,22 +5,49 @@ Dax Rajani (40294118) & Harsh Ahuja (40301748)
 """
 
 from flask import Flask, render_template, Response, jsonify, stream_with_context, request
-import subprocess, json, os, re, math, requests, time, threading
+import subprocess, json, os, re, math, requests, time, threading, shutil
 from datetime import datetime, timedelta, timezone
 
 app = Flask(__name__)
 
-# ── Config ────────────────────────────────────────────────────────────
-GCLOUD  = os.path.expanduser("~/google-cloud-sdk/bin/gcloud")
-GSUTIL  = os.path.expanduser("~/google-cloud-sdk/bin/gsutil")
-PROJECT = "project-a0b2f7d8-d4bf-4557-923"
-REGION  = "us-central1"
-ZONE    = "us-central1-f"
-CLUSTER = "dss-demo-5w-1gb"
-BUCKET  = "gs://dss-project-dax"
-INPUT   = "gs://dss-project-dax/data/full/2019-Oct.csv"
-SCRIPTS = "gs://dss-project-dax/scripts"
-RESULTS_LOCAL = "/tmp/dss_results"
+
+# ── Resolve gcloud / gsutil ───────────────────────────────────────────
+def _find_tool(name):
+    """Find gcloud/gsutil: PATH first, then common install locations."""
+    found = shutil.which(name)
+    if found:
+        return found
+    candidates = [
+        os.path.expanduser(f"~/google-cloud-sdk/bin/{name}"),
+        f"/usr/lib/google-cloud-sdk/bin/{name}",
+        f"/snap/bin/{name}",
+        f"/usr/local/bin/{name}",
+        f"/usr/bin/{name}",
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return name   # fall back to bare name — will fail with a clear error
+
+
+GCLOUD  = _find_tool("gcloud")
+GSUTIL  = _find_tool("gsutil")
+
+# ── GCP config — override via environment variables ───────────────────
+# Set these before running:
+#   export GCP_PROJECT=your-project-id
+#   export GCS_BUCKET=gs://your-bucket
+#   export DATAPROC_CLUSTER=your-cluster-name
+#   export GCP_REGION=us-central1
+#   export GCP_ZONE=us-central1-f
+PROJECT = os.environ.get("GCP_PROJECT", "")
+REGION  = os.environ.get("GCP_REGION",  "us-central1")
+ZONE    = os.environ.get("GCP_ZONE",    "us-central1-f")
+CLUSTER = os.environ.get("DATAPROC_CLUSTER", "")
+BUCKET  = os.environ.get("GCS_BUCKET",  "")
+INPUT   = os.environ.get("GCS_INPUT",   f"{BUCKET}/data/2019-Oct.csv")
+SCRIPTS = os.environ.get("GCS_SCRIPTS", f"{BUCKET}/scripts")
+RESULTS_LOCAL = os.environ.get("DSS_RESULTS_DIR", "/tmp/dss_results")
 
 MONITORING_BASE = "https://monitoring.googleapis.com/v3"
 
@@ -68,12 +95,15 @@ def index():
 
 @app.route("/api/nodes")
 def nodes():
-    r = subprocess.run(
-        [GCLOUD, "compute", "instances", "list",
-         f"--filter=name~{CLUSTER}",
-         "--format=json",
-         f"--project={PROJECT}"],
-        capture_output=True, text=True)
+    try:
+        r = subprocess.run(
+            [GCLOUD, "compute", "instances", "list",
+             f"--filter=name~{CLUSTER}",
+             "--format=json",
+             f"--project={PROJECT}"],
+            capture_output=True, text=True)
+    except FileNotFoundError:
+        return jsonify({"error": f"gcloud not found at: {GCLOUD}"}), 500
     try:
         instances = json.loads(r.stdout or "[]")
     except json.JSONDecodeError:

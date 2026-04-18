@@ -10,18 +10,21 @@
 #
 # Prerequisites:
 #   gcloud CLI authenticated with a project that has Dataproc + GCS access.
-#   Scripts and data already uploaded to gs://dss-project-dax/.
+#   Scripts and data already uploaded to your GCS bucket (set GCS_BUCKET env var).
 
 set -euo pipefail
 
 WORKERS="${1:?Usage: $0 <WORKERS> <DATA_VARIANT>}"
 DATA_VARIANT="${2:?Usage: $0 <WORKERS> <DATA_VARIANT>}"
 
-# ── Config ────────────────────────────────────────────────────────────────────
-BUCKET="gs://dss-project-dax"
-INPUT_CSV="${BUCKET}/data/full/2019-Oct.csv"
-SCRIPT_URI="${BUCKET}/scripts/cloud_pipeline.py"
-REGION="us-central1"
+# ── Config — override via environment variables ───────────────────────────────
+#   export GCP_PROJECT=your-project-id
+#   export GCS_BUCKET=gs://your-bucket
+#   export GCP_REGION=us-central1
+BUCKET="${GCS_BUCKET:-}"
+INPUT_CSV="${GCS_INPUT:-${BUCKET}/data/2019-Oct.csv}"
+SCRIPT_URI="${GCS_SCRIPTS:-${BUCKET}/scripts}/cloud_pipeline.py"
+REGION="${GCP_REGION:-us-central1}"
 # GCP free-tier global quota: CPUS_ALL_REGIONS = 12 (covers all machine families).
 # n2-standard-2 (2 vCPU, 8 GB): 2w=6 CPUs, 4w=10 CPUs, 5w=12 CPUs — all within quota.
 MASTER_TYPE="n2-standard-2"
@@ -55,10 +58,13 @@ echo "   Output       : ${OUTPUT_PATH}"
 echo "   Log          : ${LOG_FILE}"
 echo "================================================================"
 
+PROJECT="${GCP_PROJECT:-}"
+
 # ── Create cluster ────────────────────────────────────────────────────────────
 echo "[$(date '+%H:%M:%S')] Creating Dataproc cluster ..."
 gcloud dataproc clusters create "${CLUSTER_NAME}" \
   --region="${REGION}" \
+  ${PROJECT:+--project="${PROJECT}"} \
   --master-machine-type="${MASTER_TYPE}" \
   --master-boot-disk-size=50GB \
   --num-workers="${WORKERS}" \

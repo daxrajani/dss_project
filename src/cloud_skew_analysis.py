@@ -5,10 +5,10 @@ Demonstrates hot-key skew in attribution and the salt technique to fix it.
 Runs on GCP Dataproc, reads from GCS.
 
 Usage (via gcloud):
-    gcloud dataproc jobs submit pyspark gs://dss-project-dax/scripts/cloud_skew_analysis.py \
+    gcloud dataproc jobs submit pyspark gs://YOUR_BUCKET/scripts/cloud_skew_analysis.py \
         --cluster=<CLUSTER> --region=us-central1 \
-        -- --input  gs://dss-project-dax/data/full/2019-Oct.csv \
-           --output gs://dss-project-dax/results/skew_analysis \
+        -- --input  gs://YOUR_BUCKET/data/2019-Oct.csv \
+           --output gs://YOUR_BUCKET/results/skew_analysis \
            --sample-fraction 0.2 \
            --salt-buckets 20
 """
@@ -196,8 +196,9 @@ def partition_size_report(df, label):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",  default="gs://dss-project-dax/data/full/2019-Oct.csv")
-    parser.add_argument("--output", default="gs://dss-project-dax/results/skew_analysis")
+    _bucket = os.environ.get("GCS_BUCKET", "")
+    parser.add_argument("--input",  default=os.environ.get("GCS_INPUT",  f"{_bucket}/data/2019-Oct.csv"))
+    parser.add_argument("--output", default=os.environ.get("GCS_OUTPUT", f"{_bucket}/results/skew_analysis"))
     parser.add_argument("--sample-fraction", type=float, default=0.2)
     parser.add_argument("--salt-buckets", type=int, default=20)
     args = parser.parse_args()

@@ -15,8 +15,8 @@ user_session in the duplicate copy so sessions remain logically distinct.
 Usage:
     python src/prepare_benchmark_data.py
     python src/prepare_benchmark_data.py \\
-        --input  gs://dss-project-dax/raw/2019-Oct.csv \\
-        --output gs://dss-project-dax/data
+        --input  gs://YOUR_BUCKET/raw/2019-Oct.csv \\
+        --output gs://YOUR_BUCKET/data
 """
 
 import argparse
@@ -133,10 +133,11 @@ def run(input_path, output_dir, spark):
     print(f"\n  Total time : {total:.1f}s")
     print("=" * 54)
     print()
+    bucket = os.environ.get("GCS_BUCKET", "gs://YOUR_BUCKET")
     print("Next step — upload to GCS:")
-    print(f"  gsutil -m cp -r {output_dir}/1gb  gs://dss-project-dax/data/")
-    print(f"  gsutil -m cp -r {output_dir}/5gb  gs://dss-project-dax/data/")
-    print(f"  gsutil -m cp -r {output_dir}/10gb gs://dss-project-dax/data/")
+    print(f"  gsutil -m cp -r {output_dir}/1gb  {bucket}/data/")
+    print(f"  gsutil -m cp -r {output_dir}/5gb  {bucket}/data/")
+    print(f"  gsutil -m cp -r {output_dir}/10gb {bucket}/data/")
     print()
 
 

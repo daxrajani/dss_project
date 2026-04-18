@@ -10,15 +10,34 @@
 #    bash demo.sh all         — Cloud demo + results (no streaming)
 # =============================================================================
 
-PYTHON="$HOME/google-cloud-sdk/platform/bundledpythonunix/bin/python3"
-GCLOUD="$HOME/google-cloud-sdk/bin/gcloud"
-GSUTIL="$HOME/google-cloud-sdk/bin/gsutil"
-CLUSTER="dss-demo-5w-1gb"
-REGION="us-central1"
-PROJECT="project-a0b2f7d8-d4bf-4557-923"
-INPUT="gs://dss-project-dax/data/full/2019-Oct.csv"
-BUCKET="gs://dss-project-dax"
-SCRIPTS="gs://dss-project-dax/scripts"
+# ── Resolve gcloud/gsutil from PATH or common locations ──────────────
+_find_tool() {
+    local name="$1"
+    command -v "$name" 2>/dev/null && return
+    for p in "$HOME/google-cloud-sdk/bin/$name" \
+             "/usr/lib/google-cloud-sdk/bin/$name" \
+             "/snap/bin/$name" \
+             "/usr/local/bin/$name"; do
+        [ -f "$p" ] && echo "$p" && return
+    done
+    echo "$name"   # bare name — will fail with a clear error if missing
+}
+
+PYTHON=$(command -v python3 2>/dev/null || echo python3)
+GCLOUD=$(_find_tool gcloud)
+GSUTIL=$(_find_tool gsutil)
+
+# ── GCP config — override via environment variables ──────────────────
+# Set these before running:
+#   export GCP_PROJECT=your-project-id
+#   export GCS_BUCKET=gs://your-bucket
+#   export DATAPROC_CLUSTER=your-cluster-name
+CLUSTER="${DATAPROC_CLUSTER:-dss-demo-5w-1gb}"
+REGION="${GCP_REGION:-us-central1}"
+PROJECT="${GCP_PROJECT:-}"
+BUCKET="${GCS_BUCKET:-}"
+INPUT="${GCS_INPUT:-${BUCKET}/data/2019-Oct.csv}"
+SCRIPTS="${GCS_SCRIPTS:-${BUCKET}/scripts}"
 RESULTS_DIR="results"
 
 # ── Colours ──────────────────────────────────────────────────────────────────

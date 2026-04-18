@@ -5,14 +5,15 @@ Compares flat vs date-partitioned Parquet for purchase event data.
 Runs on GCP Dataproc, reads/writes to GCS.
 
 Usage (via gcloud):
-    gcloud dataproc jobs submit pyspark gs://dss-project-dax/scripts/cloud_partition_analysis.py \
+    gcloud dataproc jobs submit pyspark gs://YOUR_BUCKET/scripts/cloud_partition_analysis.py \
         --cluster=<CLUSTER> --region=us-central1 \
-        -- --input  gs://dss-project-dax/data/full/2019-Oct.csv \
-           --output gs://dss-project-dax/results/partition_analysis \
+        -- --input  gs://YOUR_BUCKET/data/2019-Oct.csv \
+           --output gs://YOUR_BUCKET/results/partition_analysis \
            --sample-fraction 0.15
 """
 
 import argparse
+import os
 import time
 
 from pyspark.sql import SparkSession
@@ -21,8 +22,9 @@ from pyspark.sql.functions import col, regexp_replace, to_date, to_timestamp
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",  default="gs://dss-project-dax/data/full/2019-Oct.csv")
-    parser.add_argument("--output", default="gs://dss-project-dax/results/partition_analysis")
+    _bucket = os.environ.get("GCS_BUCKET", "")
+    parser.add_argument("--input",  default=os.environ.get("GCS_INPUT",  f"{_bucket}/data/2019-Oct.csv"))
+    parser.add_argument("--output", default=os.environ.get("GCS_OUTPUT", f"{_bucket}/results/partition_analysis"))
     parser.add_argument("--sample-fraction", type=float, default=0.15)
     args = parser.parse_args()
 

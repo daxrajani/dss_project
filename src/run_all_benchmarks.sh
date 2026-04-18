@@ -81,7 +81,7 @@ done
 echo "========================================================"
 echo ""
 echo "  Logs: results/cloud_<Nw>_<size>.log"
-echo "  Results on GCS: gs://dss-project-dax/results/<Nw>-<size>/"
+echo "  Results on GCS: \${GCS_BUCKET}/results/<Nw>-<size>/"
 echo "========================================================"
 } | tee "$SUMMARY_FILE"
 
