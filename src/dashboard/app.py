@@ -223,11 +223,32 @@ def resize_cluster():
 
     def _do_resize():
         global _resize_state
+
+        # Check current cluster state — must be RUNNING before update
+        desc = subprocess.run(
+            [GCLOUD, "dataproc", "clusters", "describe", CLUSTER,
+             f"--region={REGION}", f"--project={PROJECT}",
+             "--format=value(status.state)"],
+            capture_output=True, text=True)
+        state = desc.stdout.strip()
+
+        if state == "STOPPED":
+            _resize_state["status"] = "starting"
+            start = subprocess.run(
+                [GCLOUD, "dataproc", "clusters", "start", CLUSTER,
+                 f"--region={REGION}", f"--project={PROJECT}"],
+                capture_output=True, text=True, timeout=300)
+            if start.returncode != 0:
+                _resize_state = {"status": "failed", "workers": n,
+                                 "error": start.stderr.strip(), "error_type": "start_failed"}
+                return
+
+        _resize_state["status"] = "resizing"
         r = subprocess.run(
             [GCLOUD, "dataproc", "clusters", "update", CLUSTER,
              f"--num-workers={n}",
              f"--region={REGION}",
-             f"--project={PROJECT}"],          # synchronous — waits for completion
+             f"--project={PROJECT}"],
             capture_output=True, text=True, timeout=360)
         if r.returncode != 0:
             err = r.stderr.strip()
