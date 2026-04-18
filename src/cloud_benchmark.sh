@@ -86,10 +86,12 @@ _create_cluster() {
             output=$(gcloud dataproc clusters create "${CLUSTER_NAME}" \
                 --region="$r" $(_pf) \
                 --master-machine-type="$mtype" \
-                --master-boot-disk-size=50GB \
+                --master-boot-disk-size=32GB \
+                --master-disk-size=32GB \
                 --num-workers="${WORKERS}" \
                 --worker-machine-type="$mtype" \
-                --worker-boot-disk-size=50GB \
+                --worker-boot-disk-size=32GB \
+                --worker-disk-size=32GB \
                 --image-version="${IMAGE_VERSION}" \
                 --optional-components=JUPYTER \
                 --enable-component-gateway \

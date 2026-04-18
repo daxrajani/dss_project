@@ -48,7 +48,7 @@ _gcp_setup() {
     BUCKET="${GCS_BUCKET:-gs://dss-project-dax}"
     INPUT="${GCS_INPUT:-${BUCKET}/data/full/2019-Oct.csv}"
     SCRIPTS="${GCS_SCRIPTS:-${BUCKET}/scripts}"
-    CLUSTER="${DATAPROC_CLUSTER:-dss-demo-5w}"
+    CLUSTER="${DATAPROC_CLUSTER:-dss-demo-5w-1gb}"
     export PROJECT BUCKET INPUT SCRIPTS CLUSTER
 }
 
@@ -91,10 +91,12 @@ _create_cluster() {
             out=$($GCLOUD dataproc clusters create "$name" \
                 --region="$r" $(_pf) \
                 --master-machine-type="$mtype" \
-                --master-boot-disk-size=50GB \
+                --master-boot-disk-size=32GB \
+                --master-disk-size=32GB \
                 --num-workers="$workers" \
                 --worker-machine-type="$mtype" \
-                --worker-boot-disk-size=50GB \
+                --worker-boot-disk-size=32GB \
+                --worker-disk-size=32GB \
                 --image-version=2.1-debian11 \
                 --optional-components=JUPYTER \
                 --enable-component-gateway \
