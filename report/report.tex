@@ -9,31 +9,10 @@
 \usepackage{url}
 \usepackage{amsmath}
 \usepackage{xcolor}
-\usepackage{subcaption}
-\usepackage{tikz}
-\usepackage{pgfplots}
-\pgfplotsset{compat=1.18}
-\usetikzlibrary{shapes.geometric, arrows.standard, positioning, fit, backgrounds}
+\usepackage{enumitem}
 
 \setlength{\parskip}{2pt}
 \setlength{\parindent}{1em}
-
-% TikZ styles
-\tikzset{
-  box/.style={rectangle, rounded corners=3pt, draw=black!70, fill=#1,
-              text width=1.5cm, align=center, minimum height=0.7cm, font=\tiny\bfseries},
-  boxw/.style={box=white},
-  boxb/.style={box=blue!15},
-  boxg/.style={box=green!15},
-  boxo/.style={box=orange!15},
-  boxr/.style={box=red!12},
-  arr/.style={->, thick, >=stealth},
-  dasharr/.style={->, dashed, thick, >=stealth, gray},
-  label/.style={font=\tiny, align=center},
-  mod/.style={rectangle, draw=black!60, fill=gray!10, rounded corners=2pt,
-              text width=2.2cm, align=center, minimum height=0.55cm, font=\tiny},
-  modarrow/.style={->, >=stealth, thick, black!60},
-}
 
 % ── Title ────────────────────────────────────────────────────────────────────
 \title{\Large \bf Distributed E-commerce Analytics:\\
@@ -157,52 +136,7 @@ dashboard then reads those results to generate analytics charts.
 
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[node distance=0.3cm and 0.25cm]
-
-% GCS Input
-\node[boxb, text width=1.3cm] (gcs_in) {GCS\\Input CSV};
-
-% Cluster box
-\node[rectangle, draw=black!50, dashed, rounded corners=4pt,
-      fill=blue!4, minimum width=4.2cm, minimum height=3.6cm,
-      right=0.35cm of gcs_in] (cluster) {};
-\node[above, font=\tiny\bfseries, text=black!60] at (cluster.north)
-     {GCP Dataproc Cluster (1M + 5W)};
-
-% Stages inside cluster
-\node[boxg, text width=1.7cm, anchor=north west,
-      xshift=0.1cm, yshift=-0.35cm] at (cluster.north west)
-     (etl) {1. ETL \& Enrich};
-\node[boxg, text width=1.7cm, below=0.15cm of etl]
-     (sess) {2. Sessionization};
-\node[boxg, text width=1.7cm, below=0.15cm of sess]
-     (funnel) {3. Funnel Analysis};
-\node[boxg, text width=1.7cm, below=0.15cm of funnel]
-     (attr) {4. Attribution};
-\node[boxg, text width=1.7cm, below=0.15cm of attr]
-     (anom) {5. Anomaly Detect};
-
-% GCS Output
-\node[boxo, text width=1.3cm, right=0.35cm of cluster] (gcs_out) {GCS\\Parquet Out};
-
-% Dashboard
-\node[boxr, text width=1.3cm, below=0.4cm of gcs_out] (dash) {Web\\Dashboard};
-
-% Arrows
-\draw[arr] (gcs_in) -- (etl.west);
-\draw[arr] (etl) -- (sess);
-\draw[arr] (sess) -- (funnel);
-\draw[arr] (funnel) -- (attr);
-\draw[arr] (attr) -- (anom);
-\draw[arr] (anom.east) -- (gcs_out.west);
-\draw[arr] (gcs_out) -- (dash);
-\draw[dasharr] (gcs_in.south) |- ([yshift=-0.2cm]cluster.south)
-               -- ([yshift=-0.2cm]gcs_out.south) -- (dash.east);
-
-\node[label, below=0.04cm of gcs_in] {5.3 GB};
-\node[label, below=0.04cm of gcs_out] {Parquet};
-
-\end{tikzpicture}
+\includegraphics[width=0.82\columnwidth]{figures/fig_architecture.png}
 \caption{System architecture. Raw CSV is read from GCS into the Dataproc cluster.
 The five stages run sequentially and write Parquet back to GCS. The dashboard
 reads from GCS and serves results to a browser.}
@@ -285,47 +219,7 @@ The charts are served directly as static files.
 
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[node distance=0.25cm and 0.2cm]
-
-% Main pipeline
-\node[mod, fill=blue!12, text width=2.8cm] (cp) {\texttt{cloud\_pipeline.py}\\(main Dataproc job)};
-
-% Five stage nodes below
-\node[mod, below left=0.4cm and -0.3cm of cp, text width=1.25cm] (etl2) {\texttt{etl\_enrich}\\function};
-\node[mod, right=0.2cm of etl2, text width=1.25cm] (sess2) {\texttt{sessionize}\\function};
-\node[mod, right=0.2cm of sess2, text width=1.25cm] (funnel2) {\texttt{funnel}\\function};
-\node[mod, below=0.25cm of etl2, text width=1.25cm] (attr2) {\texttt{attribution}\\function};
-\node[mod, right=0.2cm of attr2, text width=1.25cm] (anom2) {\texttt{anomaly}\\function};
-
-\draw[modarrow] (cp.south) -- ++(0,-0.22) -| (etl2.north);
-\draw[modarrow] (cp.south) -- ++(0,-0.22) -| (sess2.north);
-\draw[modarrow] (cp.south) -- ++(0,-0.22) -| (funnel2.north);
-\draw[modarrow] (cp.south) -- ++(0,-0.38) -| (attr2.north);
-\draw[modarrow] (cp.south) -- ++(0,-0.38) -| (anom2.north);
-
-% GCS Parquet
-\node[mod, fill=orange!15, below=0.25cm of funnel2, text width=1.25cm] (parquet) {GCS Parquet\\outputs};
-\draw[modarrow] (etl2.south) |- (parquet.west);
-\draw[modarrow] (sess2.south) -- (parquet.north);
-\draw[modarrow] (funnel2.south) -- (parquet);
-\draw[modarrow] (attr2.south) -| (parquet.south);
-\draw[modarrow] (anom2.south) -| (parquet.east);
-
-% Dashboard side
-\node[mod, fill=red!10, right=0.35cm of cp, text width=1.5cm] (app) {\texttt{app.py}\\(Flask)};
-\node[mod, fill=red!10, below=0.25cm of app, text width=1.5cm] (charts) {\texttt{dashboard\_charts.py}};
-\node[mod, fill=red!10, below=0.25cm of charts, text width=1.5cm] (html) {\texttt{index.html}\\(frontend)};
-
-\draw[modarrow] (app) -- (charts);
-\draw[modarrow] (charts) -- (html);
-\draw[modarrow] (parquet.east) -- ++(0.15,0) |- (charts.west);
-
-% Streaming
-\node[mod, fill=green!12, below=0.25cm of anom2, text width=1.25cm] (stream) {\texttt{streaming\_job.py}};
-\node[mod, fill=green!12, left=0.2cm of stream, text width=1.25cm] (prod) {\texttt{stream\_producer.py}};
-\draw[modarrow] (prod) -- (stream);
-
-\end{tikzpicture}
+\includegraphics[width=0.82\columnwidth]{figures/fig_implementation.png}
 \caption{Implementation structure. \texttt{cloud\_pipeline.py} orchestrates the five
 stage functions. Outputs go to GCS as Parquet. The dashboard reads these to generate
 analytics charts. The streaming component runs independently.}
@@ -428,7 +322,7 @@ with a time-window predicate. Spark's default planner chooses a sort-merge join,
 which shuffles both sides across the network. We forced a broadcast join by
 hinting \texttt{broadcast(orders\_df)}, since the orders table fits comfortably in
 executor memory at roughly 200 MB for the 5 GB run. The broadcast join completed
-in 7.15 seconds versus 11.33 seconds for the shuffle join — a 1.58x speedup with
+in 7.15 seconds versus 11.33 seconds for the shuffle join, a 1.58x speedup with
 identical output: 153,628 attributed orders in both cases. The key trade-off is
 memory: broadcasting becomes unsafe if the orders table grows beyond executor
 memory. For our workload sizes this is not a concern.
@@ -438,7 +332,7 @@ We compared reading enriched events from a flat Parquet directory against a
 date-partitioned layout written with \texttt{partitionBy("event\_date")}. Spark
 can skip whole date directories when a filter like
 \texttt{event\_date = '2019-10-15'} is applied. For a single-day filter the
-partitioned layout reduced query time from 4.25 seconds to 1.37 seconds — a
+partitioned layout reduced query time from 4.25 seconds to 1.37 seconds, a
 3.11x speedup. For a 7-day range query the speedup was 1.73x (3.09s to 1.78s).
 The smaller relative gain on the range query is expected: more partitions are
 included and the scan-skipping benefit shrinks proportionally.
@@ -446,14 +340,14 @@ included and the scan-skipping benefit shrinks proportionally.
 \textbf{Skew Analysis and Salting.}
 We tested salting on the attribution join key to see if any user or session had
 significantly more events than others. The salted version added a random integer
-suffix (salt) to the join key on both sides, effectively splitting hot partitions.
-The salted run took 79.1 seconds versus 34.6 seconds unsalted. Salting was
-slower by 2.3x. Inspecting the Spark UI task time histogram showed that no
-executor held more than 1.3x the average load. The data is uniformly distributed
-and there is no real skew to mitigate. The extra cost comes from the
-\texttt{explode} operation that replicates each orders row once per salt value
-plus the two-phase join required after salting. This was a useful negative result:
-salting is a solution for real skew, not a general-purpose optimization.
+suffix to the join key on both sides, effectively splitting hot partitions.
+The salted run took 79.1 seconds versus 34.6 seconds unsalted, 2.3x slower.
+Inspecting the Spark UI task time histogram showed that no executor held more than
+1.3x the average load. The data is uniformly distributed and there is no real skew
+to mitigate. The extra cost comes from the \texttt{explode} operation that replicates
+each orders row once per salt value plus the two-phase join required after salting.
+This was a useful negative result: salting is a solution for real skew, not a
+general-purpose optimization.
 
 \begin{figure}[t]
 \centering
@@ -670,9 +564,9 @@ experiment is the default Spark behavior without any hint or partitioning change
 \toprule
 Experiment & Baseline & Optimized & Speedup \\
 \midrule
-Broadcast join (attribution)   & 11.33s & 7.15s  & 1.58x \\
-Partition pruning (single day) &  4.25s & 1.37s  & 3.11x \\
-Partition pruning (7-day)      &  3.09s & 1.78s  & 1.73x \\
+Broadcast join (attribution)   & 11.33s &  7.15s & 1.58x \\
+Partition pruning (single day) &  4.25s &  1.37s & 3.11x \\
+Partition pruning (7-day)      &  3.09s &  1.78s & 1.73x \\
 Skew salting (attribution)     & 34.60s & 79.10s & 0.44x \\
 \bottomrule
 \end{tabular}
