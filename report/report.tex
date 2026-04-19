@@ -10,6 +10,16 @@
 \usepackage{amsmath}
 \usepackage{xcolor}
 \usepackage{enumitem}
+\usepackage{float}
+
+% Allow more floats per page and be aggressive about placement
+\setcounter{topnumber}{4}
+\setcounter{bottomnumber}{4}
+\setcounter{totalnumber}{8}
+\renewcommand{\topfraction}{0.95}
+\renewcommand{\bottomfraction}{0.95}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.85}
 
 \setlength{\parskip}{2pt}
 \setlength{\parindent}{1em}
@@ -134,7 +144,7 @@ Storage. When a pipeline job starts, the Dataproc cluster reads the input, runs 
 five stages in sequence, and writes Parquet output directories back to GCS. The web
 dashboard then reads those results to generate analytics charts.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.82\columnwidth]{figures/fig_architecture.png}
 \caption{System architecture. Raw CSV is read from GCS into the Dataproc cluster.
@@ -217,7 +227,7 @@ After a run finishes, \texttt{dashboard\_charts.py} downloads the Parquet output
 from GCS and generates three dark-themed analytics PNG charts using matplotlib.
 The charts are served directly as static files.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.82\columnwidth]{figures/fig_implementation.png}
 \caption{Implementation structure. \texttt{cloud\_pipeline.py} orchestrates the five
@@ -267,7 +277,7 @@ job submission overhead are excluded from all reported numbers.
 Table~\ref{tab:scaling} shows the full results across all nine configurations. Total
 pipeline time drops significantly as we add workers.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \small
 \caption{Scaling study: all nine configurations. Rows/sec counts all pipeline stages combined.}
@@ -295,7 +305,7 @@ is close to linear. The same comparison on 10 GB gives a 2.04x speedup from 1378
 seconds to 674.0 seconds. The diminishing return at larger data sizes reflects
 increased GCS write pressure and more shuffle data crossing the network.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=\columnwidth]{figures/chart_scaling_time.png}
 \caption{Total pipeline time for all nine configurations. Within each data-size
@@ -349,7 +359,7 @@ each orders row once per salt value plus the two-phase join required after salti
 This was a useful negative result: salting is a solution for real skew, not a
 general-purpose optimization.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=\columnwidth]{figures/chart_broadcast_join.png}
 \caption{Broadcast join versus sort-merge join for the attribution stage (5 GB
@@ -357,7 +367,7 @@ data, 5 workers). Both produce 153,628 attributed orders. Lower is better.}
 \label{fig:broadcast}
 \end{figure}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=\columnwidth]{figures/chart_partition_pruning.png}
 \caption{Partition pruning speedup for single-day and 7-day range queries.
@@ -496,7 +506,7 @@ The table below documents each team member's primary responsibilities across the
 project. P indicates the member who led that component. S indicates the member who
 assisted and reviewed. J indicates work done together throughout the project.
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \small
 \caption{Team contributions. P = primary, S = support, J = joint.}
@@ -527,7 +537,7 @@ sizes because it performs three Parquet writes. Sessionization is the most
 expensive compute stage due to the full dataset sort by user and time. At larger
 data sizes, GCS write pressure causes ETL time to grow faster than the other stages.
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \small
 \caption{Per-stage wall time (seconds) for three configurations on 5 workers.
@@ -555,7 +565,7 @@ Table~\ref{tab:opts} summarizes all three optimization experiments. All runs use
 5 workers and the 5 GB dataset to keep the comparison fair. The baseline for each
 experiment is the default Spark behavior without any hint or partitioning change.
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \small
 \caption{Optimization experiment results. All runs: 5 workers, 5 GB dataset.}
