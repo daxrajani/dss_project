@@ -11,6 +11,8 @@
 \usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{positioning, fit, backgrounds, arrows.meta}
 
 % Allow more floats per page and be aggressive about placement
 \setcounter{topnumber}{4}
@@ -146,7 +148,51 @@ dashboard then reads those results to generate analytics charts.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.82\columnwidth]{figures/fig_architecture.png}
+\begin{tikzpicture}[
+  node distance = 0.32cm,
+  gcsbox/.style  = {rectangle, rounded corners=4pt, draw=blue!60,
+                    fill=blue!12, text width=4.6cm, minimum height=0.72cm,
+                    align=center, font=\small\bfseries},
+  stagebox/.style= {rectangle, rounded corners=3pt, draw=green!60!black,
+                    fill=green!13, text width=4.1cm, minimum height=0.6cm,
+                    align=center, font=\small},
+  outbox/.style  = {rectangle, rounded corners=4pt, draw=orange!70,
+                    fill=orange!15, text width=4.6cm, minimum height=0.72cm,
+                    align=center, font=\small\bfseries},
+  webbox/.style  = {rectangle, rounded corners=4pt, draw=red!60,
+                    fill=red!10, text width=4.6cm, minimum height=0.72cm,
+                    align=center, font=\small\bfseries},
+  arr/.style     = {-{Stealth[length=5pt]}, thick, black!65},
+]
+  \node[gcsbox] (input) {GCS Input CSV\\{\footnotesize 5.3\,GB \textperiodcentered{} 42M rows}};
+
+  \node[stagebox, below=0.65cm of input]  (etl)    {1.\ \ ETL \& Enrichment};
+  \node[stagebox, below=0.22cm of etl]    (sess)   {2.\ \ Sessionization};
+  \node[stagebox, below=0.22cm of sess]   (funnel) {3.\ \ Funnel Analysis};
+  \node[stagebox, below=0.22cm of funnel] (attr)   {4.\ \ Last-Touch Attribution};
+  \node[stagebox, below=0.22cm of attr]   (anom)   {5.\ \ Anomaly Detection};
+
+  \begin{scope}[on background layer]
+    \node[rectangle, dashed, rounded corners=6pt, draw=gray!70, fill=blue!4,
+          inner sep=0.22cm,
+          label={[font=\scriptsize\bfseries,text=gray!80]above:%
+                 GCP Dataproc Cluster \ (1 Master + 5 Workers, n2-standard-2)},
+          fit=(etl)(sess)(funnel)(attr)(anom)] (cluster) {};
+  \end{scope}
+
+  \node[outbox, below=0.65cm of anom] (output)
+        {GCS Parquet Output\\{\footnotesize 4 result directories}};
+  \node[webbox, below=0.32cm of output] (dash)
+        {Web Dashboard\\{\footnotesize Flask + matplotlib}};
+
+  \draw[arr] (input.south)   -- (cluster.north);
+  \draw[arr] (etl)   -- (sess);
+  \draw[arr] (sess)  -- (funnel);
+  \draw[arr] (funnel)-- (attr);
+  \draw[arr] (attr)  -- (anom);
+  \draw[arr] (cluster.south) -- (output.north);
+  \draw[arr] (output) -- (dash);
+\end{tikzpicture}
 \caption{System architecture. Raw CSV is read from GCS into the Dataproc cluster.
 The five stages run sequentially and write Parquet back to GCS. The dashboard
 reads from GCS and serves results to a browser.}
@@ -229,7 +275,77 @@ The charts are served directly as static files.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.82\columnwidth]{figures/fig_implementation.png}
+\begin{tikzpicture}[
+  node distance = 0.28cm,
+  mainbox/.style = {rectangle, rounded corners=4pt, draw=blue!65,
+                    fill=blue!12, text width=4.6cm, minimum height=0.72cm,
+                    align=center, font=\small\bfseries},
+  funcbox/.style = {rectangle, rounded corners=3pt, draw=green!60!black,
+                    fill=green!13, text width=4.1cm, minimum height=0.58cm,
+                    align=center, font=\small\ttfamily},
+  storebox/.style= {rectangle, rounded corners=4pt, draw=orange!70,
+                    fill=orange!15, text width=4.6cm, minimum height=0.68cm,
+                    align=center, font=\small\bfseries},
+  dashbox/.style = {rectangle, rounded corners=3pt, draw=red!60,
+                    fill=red!10, text width=4.1cm, minimum height=0.58cm,
+                    align=center, font=\small\ttfamily},
+  streambox/.style={rectangle, rounded corners=3pt, draw=green!70!black,
+                    fill=green!18, text width=4.1cm, minimum height=0.58cm,
+                    align=center, font=\small\ttfamily},
+  grpbox/.style  = {rectangle, rounded corners=5pt, draw=gray!50,
+                    dashed, fill=gray!5, inner sep=0.2cm},
+  arr/.style     = {-{Stealth[length=5pt]}, thick, black!65},
+]
+
+  % Entry point
+  \node[mainbox] (cp) {cloud\_pipeline.py\\{\footnotesize main Dataproc job}};
+
+  % Stage functions
+  \node[funcbox, below=0.6cm of cp] (etl)    {etl\_enrich()};
+  \node[funcbox, below=0.22cm of etl]  (sess)   {sessionize()};
+  \node[funcbox, below=0.22cm of sess] (fn)     {funnel()};
+  \node[funcbox, below=0.22cm of fn]   (attr)   {attribution()};
+  \node[funcbox, below=0.22cm of attr] (anom)   {anomaly()};
+
+  \begin{scope}[on background layer]
+    \node[grpbox, label={[font=\scriptsize\bfseries,text=gray]above:Pipeline Stage Functions},
+          fit=(etl)(sess)(fn)(attr)(anom)] (stages) {};
+  \end{scope}
+
+  \draw[arr] (cp.south) -- (stages.north);
+  \draw[arr] (etl)--(sess); \draw[arr] (sess)--(fn);
+  \draw[arr] (fn)--(attr); \draw[arr] (attr)--(anom);
+
+  % GCS Parquet
+  \node[storebox, below=0.6cm of anom] (parquet) {GCS Parquet Outputs};
+  \draw[arr] (stages.south) -- (parquet.north);
+
+  % Dashboard group
+  \node[dashbox, below=0.6cm of parquet] (app)    {app.py \ (Flask)};
+  \node[dashbox, below=0.22cm of app]    (charts) {dashboard\_charts.py};
+  \node[dashbox, below=0.22cm of charts] (html)   {index.html \ (frontend)};
+
+  \begin{scope}[on background layer]
+    \node[grpbox, label={[font=\scriptsize\bfseries,text=gray]above:Dashboard},
+          fit=(app)(charts)(html)] (dashgrp) {};
+  \end{scope}
+
+  \draw[arr] (parquet.south) -- (dashgrp.north);
+  \draw[arr] (app)--(charts); \draw[arr] (charts)--(html);
+
+  % Streaming group — placed to the right of dashboard
+  \node[streambox, right=0.5cm of app]    (prod)   {stream\_producer.py};
+  \node[streambox, below=0.22cm of prod]  (stream) {streaming\_job.py};
+
+  \begin{scope}[on background layer]
+    \node[grpbox, label={[font=\scriptsize\bfseries,text=gray]above:Streaming (local)},
+          fit=(prod)(stream)] (streamgrp) {};
+  \end{scope}
+
+  \draw[arr] (prod)--(stream);
+  \draw[arr] (parquet.east) -| (streamgrp.north);
+
+\end{tikzpicture}
 \caption{Implementation structure. \texttt{cloud\_pipeline.py} orchestrates the five
 stage functions. Outputs go to GCS as Parquet. The dashboard reads these to generate
 analytics charts. The streaming component runs independently.}
