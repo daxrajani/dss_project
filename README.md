@@ -64,6 +64,24 @@ You do not need to install any Python packages in Codespaces. Everything is inst
 
 ---
 
+## Design Decisions
+
+### Why 30 Minutes for Session Inactivity
+
+The 30-minute inactivity threshold for sessionization is the industry standard established by Google Analytics and widely adopted across web analytics platforms. The reasoning is grounded in observed user behavior: a typical e-commerce browsing session involves viewing product pages, adding items to a cart, and completing a purchase, all of which happen within a continuous window of activity. If a user goes idle for more than 30 minutes, it is statistically likely they have stepped away and any subsequent activity represents a new intent and a new visit.
+
+Using a shorter threshold like 10 minutes would incorrectly split active sessions where a user pauses briefly to read a product review or compare prices on another tab. Using a longer threshold like 60 minutes would merge what are genuinely separate visits into a single session, inflating session length and distorting funnel metrics. The 30-minute value was chosen because it balances these two error types and aligns with what the analytics industry has validated at scale.
+
+### Why 24 Hours for Attribution Lookback
+
+The 24-hour lookback window for last-touch attribution defines how far back in time we search for the referrer session that gets credit for an order. This window was chosen for two reasons.
+
+First, e-commerce purchase decisions in the fast-moving consumer goods and electronics categories that dominate this dataset are largely same-day decisions. A user who clicks a Facebook ad and then purchases within the same day is a clear attribution case. A user who purchased 5 days after a referral visit is likely making an independent decision driven by factors outside the referral.
+
+Second, a longer window introduces noise. If the lookback is 7 days, a single instagram referral session can get credited for multiple unrelated purchases spread across the week, which overstates the impact of that channel. The 24-hour window keeps attribution tight and defensible. In the results, 525,580 out of 742,849 orders (70.7%) were successfully attributed, which indicates the window is wide enough to capture genuine referral-driven purchases without being so narrow that it misses same-day conversions.
+
+---
+
 ## Pipeline Stages
 
 The pipeline has five stages, all contained in `src/cloud_pipeline.py` as a single self-contained Dataproc job.
