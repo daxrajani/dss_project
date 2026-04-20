@@ -6,14 +6,14 @@ echo "========================================================"
 echo "  DSS Project — Codespace Setup"
 echo "========================================================"
 
-# ── Auto-authenticate GCP via service account secret ─────────────────
+# ── Auto-authenticate GCP via credentials secret ─────────────────────
 if [[ -n "${GCP_SERVICE_ACCOUNT_KEY}" ]]; then
-    echo "${GCP_SERVICE_ACCOUNT_KEY}" > /tmp/gcp-key.json
     source "$HOME/google-cloud-sdk/path.bash.inc" 2>/dev/null || true
-    gcloud auth activate-service-account --key-file=/tmp/gcp-key.json --quiet 2>/dev/null || true
+    mkdir -p "$HOME/.config/gcloud"
+    echo "${GCP_SERVICE_ACCOUNT_KEY}" > "$HOME/.config/gcloud/application_default_credentials.json"
     gcloud config set project project-a0b2f7d8-d4bf-4557-923 --quiet 2>/dev/null || true
-    rm /tmp/gcp-key.json
-    echo ">>> GCP authenticated via service account."
+    gcloud config set account daxrajani@gmail.com --quiet 2>/dev/null || true
+    echo ">>> GCP authenticated automatically."
 fi
 
 # ── Google Cloud CLI ─────────────────────────────────────────────────
