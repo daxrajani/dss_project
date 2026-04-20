@@ -153,19 +153,7 @@ Click the Codespaces badge at the top. The environment builds automatically in a
 pip install -r requirements.txt
 ```
 
-**Step 2:** Load the gcloud CLI into your terminal session
-
-```bash
-source ~/google-cloud-sdk/path.bash.inc
-```
-
-**Step 3:** Authenticate with GCP. This will print a URL in the terminal. Open that URL in your browser, sign in with your Google account, and copy the verification code it gives you. Paste that code back into the terminal and press Enter.
-
-```bash
-gcloud auth login
-```
-
-**Step 4:** Launch the dashboard
+**Step 2:** Launch the dashboard
 
 ```bash
 bash dashboard.sh
