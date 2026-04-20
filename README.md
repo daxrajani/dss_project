@@ -5,7 +5,7 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/daxrajani/dss_project)
 
-The GCP project and bucket are already configured. The only thing needed for cloud commands is `gcloud auth login`. Cluster creation, region selection, and job submission are all handled automatically.
+This project builds a distributed data processing pipeline using Apache Spark on Google Cloud Dataproc. It processes 42 million e-commerce events through five analytical stages and includes a live web dashboard for running and monitoring the pipeline in real time. The GCP project, bucket, and cluster are already configured. No manual cloud setup is needed.
 
 ---
 
@@ -28,7 +28,7 @@ The GCP project and bucket are already configured. The only thing needed for clo
 
 ## Overview
 
-A distributed data processing pipeline built on Apache Spark that processes the REES46 e-commerce dataset (42M+ rows, 5.3 GB) through five analytical stages on GCP Dataproc. The project includes a live web dashboard with real-time cluster monitoring, job submission, VM metrics, and interactive analytics charts.
+The pipeline processes the REES46 e-commerce dataset (42M+ rows, 5.3 GB) through five analytical stages on GCP Dataproc. It includes a live web dashboard for cluster monitoring, pipeline execution, VM metrics, and analytics visualization.
 
 ### Key Numbers from Live GCP Runs
 
@@ -50,11 +50,106 @@ A distributed data processing pipeline built on Apache Spark that processes the 
 |---|---|---|
 | 1 | **ETL and Enrichment** | Reads CSV, synthesizes `device` and `referrer` via CRC32 hash on `user_session`, derives `orders` and `catalog` tables, writes Parquet |
 | 2 | **Sessionization** | 30 minute inactivity threshold per user using Spark window functions |
-| 3 | **Funnel Analysis** | View to Cart to Purchase conversion rates by category, device, referrer at daily and weekly granularity |
-| 4 | **Last-Touch Attribution** | Temporal join: for each order, finds the most recent non-direct referrer session within a 24 hour lookback window |
-| 5 | **Anomaly Detection** | 7-day rolling z-score baseline that flags SPIKE and DROP days with text explanations, per day and per category |
+| 3 | **Funnel Analysis** | View to Cart to Purchase conversion rates by category, device, and referrer at daily and weekly granularity |
+| 4 | **Last-Touch Attribution** | For each order, finds the most recent non-direct referrer session within a 24 hour lookback window using a temporal join |
+| 5 | **Anomaly Detection** | 7-day rolling z-score baseline that flags SPIKE and DROP days with text explanations, computed per day and per category |
 
-All five stages are in `src/cloud_pipeline.py`, a single self-contained Dataproc job.
+All five stages are contained in `src/cloud_pipeline.py` as a single self-contained Dataproc job.
+
+---
+
+## Running the Demo
+
+There are two ways to run this project. The dashboard option gives a full live experience with the GCP cluster. The command line option includes demos that run entirely locally with no cloud access needed.
+
+---
+
+### Option A: Live Web Dashboard (Recommended)
+
+**Step 1:** Click the Codespaces badge at the top of this page to open the project in GitHub Codespaces. The environment takes about 5 to 8 minutes to build on first launch. It installs Python, Java, the Google Cloud SDK, and all required packages automatically.
+
+**Step 2:** Once the Codespace is ready, open the terminal and run the following command to load the Google Cloud SDK into your current session:
+
+```bash
+source ~/google-cloud-sdk/path.bash.inc
+```
+
+**Step 3:** Start the dashboard:
+
+```bash
+bash dashboard.sh
+```
+
+**Step 4:** Open the forwarded port 5000 in your browser when Codespaces prompts you, or go to the Ports tab and click the link next to port 5000.
+
+The dashboard will show all 6 Dataproc VMs (1 master and 5 workers) with live status. From there you can:
+
+1. Click **Run Full Pipeline** to submit the job and watch live logs stream in
+2. See each of the 5 stages complete with timing
+3. Click **Generate Charts** after the job finishes to produce analytics charts
+4. Switch between the Funnel, Attribution, and Anomalies tabs to explore results
+5. Open the VM Metrics tab to see real-time CPU and disk throughput across all VMs
+6. Click **Kill VM** on any worker during a run to demonstrate Spark fault tolerance
+
+---
+
+### Option B: Command Line (No Cloud Setup Needed for Most Commands)
+
+**Step 1:** Open the project in Codespaces using the badge above, or clone the repo locally and install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+**Step 2:** Load the Google Cloud SDK into your terminal session:
+
+```bash
+source ~/google-cloud-sdk/path.bash.inc
+```
+
+**Step 3:** Run whichever demo you need:
+
+```bash
+bash demo.sh results
+```
+Prints the full benchmark summary table and optimization experiment results. No GCP access needed. Runs instantly from pre-computed data.
+
+```bash
+bash demo.sh stream
+```
+Runs a real-time streaming anomaly detection demo entirely on your local machine using Spark Structured Streaming. No GCP access needed. Runs for about 60 seconds.
+
+```bash
+bash demo.sh perf
+```
+Regenerates all 6 performance and scaling charts from the saved benchmark logs. No GCP access needed.
+
+```bash
+bash demo.sh cloud
+```
+Submits the full pipeline to GCP Dataproc (5 workers, 1GB sample, about 4 minutes). Requires GCP access which is pre-configured for this project.
+
+```bash
+bash demo.sh analyze
+```
+Downloads the latest pipeline output from GCS and generates analytics charts locally.
+
+---
+
+## Fault Tolerance Demo
+
+During a live pipeline run on the dashboard, click **Kill VM** on any worker node. The VM shuts down mid-computation and you can watch Spark detect the failure in the live log, reassign tasks to the remaining workers, and complete the pipeline successfully. Clicking **Start** on the same worker brings it back online. Screenshots of this in action are in `screenshots/`.
+
+---
+
+## Real-Time Streaming Demo
+
+```bash
+source ~/google-cloud-sdk/path.bash.inc
+bash demo.sh stream
+```
+
+The `stream_producer.py` script writes synthetic CSV event batches every 2 seconds into a watch directory. The `streaming_job.py` script reads each batch using Spark Structured Streaming, computes purchase counts per category per 5-minute window, and flags SPIKE anomalies when counts exceed a threshold. A spike is injected automatically every 5th batch. The demo runs for 60 seconds and exits cleanly with no cleanup needed.
 
 ---
 
@@ -74,7 +169,7 @@ Full benchmark across 2, 4, and 5 workers with 1 GB, 5 GB, and 10 GB data (9 run
 | **5** | **5 GB** | **42.4M** | **409.7s** | **103,609** |
 | **5** | **10 GB** | **84.9M** | **674.0s** | **125,961** |
 
-Going from 2 to 5 workers gives a 2.0 to 2.6x speedup. Scaling from 1 GB to 10 GB on 5 workers adds only 2.6x more time for 10x more data, which shows strong sublinear scaling.
+Going from 2 to 5 workers gives a 2.0 to 2.6x speedup. Scaling from 1 GB to 10 GB on 5 workers adds only 2.6x more time for 10x more data, showing strong sublinear scaling.
 
 ---
 
@@ -85,7 +180,7 @@ Going from 2 to 5 workers gives a 2.0 to 2.6x speedup. Scaling from 1 GB to 10 G
 | Broadcast join vs shuffle join | 11.33s | 7.15s | **1.58x** |
 | Partition pruning, single day | 4.25s | 1.37s | **3.11x** |
 | Partition pruning, 7-day range | 3.09s | 1.78s | **1.73x** |
-| Skew salting | 34.6s | 79.1s | 0.44x (salting is slower because the data is already uniform) |
+| Skew salting | 34.6s | 79.1s | 0.44x (data is already uniform so salting adds overhead) |
 
 Pre-computed results are in `results/`. Charts are in `results/charts/`.
 
@@ -95,147 +190,73 @@ Pre-computed results are in `results/`. Charts are in `results/charts/`.
 
 ```
 dss_project/
-├── demo.sh                      # Main demo script (cloud/stream/results/perf/analyze)
-├── dashboard.sh                 # Launch the live web dashboard
-├── requirements.txt             # Python dependencies
+├── demo.sh                          # Main demo script (cloud/stream/results/perf/analyze)
+├── dashboard.sh                     # Launch the live web dashboard
+├── requirements.txt                 # Python dependencies
 │
 ├── src/
-│   ├── cloud_pipeline.py        # Self-contained Dataproc job, all 5 stages
-│   ├── etl_enrichment.py        # Stage 1 standalone
-│   ├── benchmark_job.py         # Stages 2 and 3 standalone
-│   ├── attribution.py           # Stage 4 standalone
-│   ├── anomaly_detection.py     # Stage 5 standalone
+│   ├── cloud_pipeline.py            # Self-contained Dataproc job, all 5 stages
+│   ├── etl_enrichment.py            # Stage 1 standalone
+│   ├── benchmark_job.py             # Stages 2 and 3 standalone
+│   ├── attribution.py               # Stage 4 standalone
+│   ├── anomaly_detection.py         # Stage 5 standalone
 │   │
-│   ├── cloud_benchmark.sh       # Submit cloud_pipeline.py to Dataproc
-│   ├── run_scaling_study.sh     # Run all 9 benchmark combinations
+│   ├── cloud_benchmark.sh           # Submit cloud_pipeline.py to Dataproc
+│   ├── run_scaling_study.sh         # Run all 9 benchmark combinations
 │   │
-│   ├── cloud_broadcast_join.py  # Optimization: broadcast join experiment
-│   ├── cloud_partition_analysis.py  # Optimization: partition pruning experiment
-│   ├── cloud_skew_analysis.py   # Optimization: data skew and salting experiment
+│   ├── cloud_broadcast_join.py      # Broadcast join optimization experiment
+│   ├── cloud_partition_analysis.py  # Partition pruning optimization experiment
+│   ├── cloud_skew_analysis.py       # Data skew and salting experiment
 │   │
-│   ├── streaming_job.py         # Spark Structured Streaming, real-time anomaly detection
-│   ├── stream_producer.py       # Synthetic event producer for streaming demo
+│   ├── streaming_job.py             # Spark Structured Streaming, real-time anomaly detection
+│   ├── stream_producer.py           # Synthetic event producer for streaming demo
 │   │
-│   ├── dashboard_charts.py      # Generate PNG analytics charts from GCS parquet
-│   ├── generate_perf_charts.py  # Generate performance and scaling charts from benchmark logs
-│   ├── analyze_gcs_results.py   # Download GCS results and print summary tables
+│   ├── dashboard_charts.py          # Generate analytics charts from GCS parquet
+│   ├── generate_perf_charts.py      # Generate performance and scaling charts from logs
+│   ├── analyze_gcs_results.py       # Download GCS results and print summary tables
 │   │
-│   └── dashboard/               # Flask live demo dashboard
-│       ├── app.py               # Backend: cluster API, job submission, chart serving
-│       └── templates/index.html # Frontend: nodes, live log, VM metrics, analytics
+│   └── dashboard/
+│       ├── app.py                   # Flask backend: cluster API, job submission, chart serving
+│       └── templates/index.html     # Frontend: nodes, live log, VM metrics, analytics tabs
 │
 ├── results/
-│   ├── benchmark_summary.csv    # All 9 scaling runs
-│   ├── cloud_*w_*.log           # Per-run Dataproc logs
+│   ├── benchmark_summary.csv        # All 9 scaling runs
+│   ├── cloud_*w_*.log               # Per-run Dataproc logs
 │   ├── broadcast_join_results.log
 │   ├── partition_analysis_results.log
 │   ├── skew_analysis_results.log
-│   └── charts/                  # PNG charts for all experiments
+│   └── charts/                      # PNG charts for all experiments
 │
-└── screenshots/                 # Live demo screenshots
+└── screenshots/                     # Live demo screenshots
 ```
-
----
-
-## Quick Start
-
-Click the Codespaces badge at the top. The environment builds automatically in about 2 minutes with Python 3.11, Java 17, and all required packages installed.
-
----
-
-## Running the Demo
-
-### Option A: Live Web Dashboard
-
-**Step 1:** Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-**Step 2:** Launch the dashboard
-
-```bash
-bash dashboard.sh
-```
-
-Then open http://localhost:5000 in your browser. The dashboard will show the Dataproc cluster nodes and you can run the full pipeline from there.
-
-What the dashboard provides:
-
-1. Shows all 6 Dataproc VMs (1 master and 5 workers) with live status
-2. Click **Run Full Pipeline** to start the cluster if needed, submit the job, and stream live logs
-3. Watch the 5 pipeline stages complete with timing per stage
-4. After the job finishes, click **Generate Charts** to produce analytics charts
-5. Switch between the Funnel, Attribution, and Anomalies tabs to explore results
-6. The VM Metrics tab shows real-time CPU utilization and disk throughput
-7. The Kill VM button on any worker lets you demonstrate Spark fault tolerance
-
-### Option B: Command Line
-
-```bash
-# Authenticate with GCP (one time only)
-gcloud auth login
-
-bash demo.sh cloud      # Submit live pipeline to GCP Dataproc, 5 workers, 1GB, about 4 minutes
-bash demo.sh stream     # Real-time streaming anomaly detection, runs locally, no GCP needed, about 60 seconds
-bash demo.sh results    # Print pre-computed benchmark table and optimization results
-bash demo.sh perf       # Regenerate all performance charts from saved logs
-bash demo.sh analyze    # Download GCS output and generate analytics charts locally
-```
-
-The GCP project (`project-a0b2f7d8-d4bf-4557-923`) and bucket (`gs://dss-project-dax`) are pre-configured. No environment variables are needed.
-
----
-
-## Fault Tolerance Demo
-
-The dashboard has a Kill VM button on each worker node. To demonstrate fault tolerance during a live pipeline run:
-
-1. Click Kill VM on `w-0` to shut down the VM mid-computation
-2. Watch the live log show the lost executor and Spark detecting the failure
-3. Spark automatically reassigns tasks to the remaining workers
-4. The pipeline completes successfully, taking slightly longer
-5. Click Start on `w-0` to bring it back online
-
-Screenshots of this in action are in `screenshots/`.
-
----
-
-## Real-Time Streaming Demo
-
-```bash
-bash demo.sh stream
-```
-
-The `stream_producer.py` script drops synthetic CSV batches every 2 seconds into a watch directory. The `streaming_job.py` script uses Spark Structured Streaming to process each micro-batch, detecting SPIKE anomalies when purchase counts exceed a threshold. A spike is injected every 5th batch automatically. The demo runs for 60 seconds and exits cleanly.
-
----
-
-## GCP Configuration
-
-Everything is pre-configured and requires no manual setup.
-
-| Config | Value |
-|---|---|
-| GCP Project | `project-a0b2f7d8-d4bf-4557-923` |
-| GCS Bucket | `gs://dss-project-dax` |
-| Input data | `gs://dss-project-dax/data/full/2019-Oct.csv` |
-| Pipeline scripts | `gs://dss-project-dax/scripts/` |
-| Demo cluster | `dss-demo-5w-1gb` (1 master and 5 workers, n2-standard-2) |
-| Region | Auto-selected from 9 fallback regions |
-
-The cluster lifecycle is fully automated. If the cluster is not found it gets created with region and machine-type fallback across e2, n2, and n1 across 9 regions. If the cluster is stopped it starts back up, which is faster than recreating it. If it is already running it gets reused immediately. After the job completes the cluster is stopped but kept for the next run to avoid recreation time.
 
 ---
 
 ## Running the Full Scaling Study
 
 ```bash
+source ~/google-cloud-sdk/path.bash.inc
 bash src/run_scaling_study.sh
 ```
 
 Runs all 9 combinations (2, 4, and 5 workers with 1, 5, and 10 GB) sequentially. Results are saved to `results/` and charts are generated automatically on completion.
+
+---
+
+## GCP Configuration
+
+Everything is pre-configured. No changes are needed to run the demo.
+
+| Setting | Value |
+|---|---|
+| GCP Project | `project-a0b2f7d8-d4bf-4557-923` |
+| GCS Bucket | `gs://dss-project-dax` |
+| Input data | `gs://dss-project-dax/data/full/2019-Oct.csv` |
+| Pipeline scripts | `gs://dss-project-dax/scripts/` |
+| Demo cluster | `dss-demo-5w-1gb` (1 master and 5 workers, n2-standard-2) |
+| Region | Auto-selected across 9 fallback regions |
+
+The cluster lifecycle is fully automated. If the cluster does not exist it gets created with automatic region and machine type fallback. If it is stopped it gets started. If it is already running it gets reused. After each job the cluster is stopped but not deleted so the next run starts faster.
 
 ---
 
@@ -245,7 +266,7 @@ Runs all 9 combinations (2, 4, and 5 workers with 1, 5, and 10 GB) sequentially.
 42,448,764 events, 5.3 GB  
 Columns: `event_time, event_type, product_id, category_id, category_code, brand, price, user_id, user_session`
 
-Synthesized fields using deterministic assignment via `crc32(user_session) % 100`:
+Two fields are synthesized deterministically using `crc32(user_session) % 100` since they are not present in the original dataset:
 
 - `device`: mobile 55%, desktop 30%, tablet 15%
 - `referrer`: direct 40%, google 25%, facebook 15%, instagram 8%, email 7%, affiliate 5%
