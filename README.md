@@ -324,20 +324,69 @@ dss_project/
 
 ---
 
-## GCP Configuration
+## GCP Infrastructure
 
-Everything is pre-configured. No changes are needed.
+### Project and Storage
 
 | Setting | Value |
 |---|---|
-| GCP Project | `project-a0b2f7d8-d4bf-4557-923` |
+| GCP Project ID | `project-a0b2f7d8-d4bf-4557-923` |
 | GCS Bucket | `gs://dss-project-dax` |
 | Input data | `gs://dss-project-dax/data/full/2019-Oct.csv` |
 | Pipeline scripts | `gs://dss-project-dax/scripts/` |
-| Demo cluster | `dss-demo-5w-1gb` (1 master and 5 workers, n2-standard-2) |
-| Region | Auto-selected across 9 fallback regions |
+| Results output | `gs://dss-project-dax/results/` |
+| Primary region | `us-central1` |
+| Zone | `us-central1-f` |
 
-The cluster lifecycle is fully automated. If the cluster does not exist it is created automatically with fallback across machine types and regions. If it is stopped it gets started. If it is already running it gets reused. After each job the cluster is stopped but kept so the next run starts faster without recreating it.
+### Demo Cluster Specification
+
+The live dashboard uses a cluster named `dss-demo-5w-1gb` with 1 master and 5 workers, all on n1-standard-2 machines.
+
+| Component | Value |
+|---|---|
+| Cluster name | `dss-demo-5w-1gb` |
+| Master nodes | 1 |
+| Worker nodes | 5 |
+| Total VMs | 6 |
+| Machine type | n1-standard-2 |
+| vCPUs per VM | 2 |
+| RAM per VM | 7.5 GB |
+| Total vCPUs | 12 |
+| Total RAM | 45 GB |
+| Boot disk per VM | 32 GB SSD |
+| Total disk across cluster | 192 GB |
+| GPU | None (CPU-only) |
+| Network per VM | Up to 10 Gbps |
+| Dataproc image | 2.1-debian11 |
+| Apache Spark | 3.3 |
+| Hadoop | 3.3 |
+| Python | 3.9 |
+| Optional components | Jupyter, Component Gateway |
+
+### Scaling Study Cluster Configurations
+
+The scaling study used n2-standard-2 machines across three worker counts. The 5-worker configuration was the maximum tested because 1 master plus 5 workers uses exactly 12 vCPUs, which is the GCP CPU quota limit for this project in the us-central1 region.
+
+| Workers | Total VMs | vCPUs per VM | RAM per VM | Disk per VM | Total vCPUs | Total RAM | Total Disk |
+|---|---|---|---|---|---|---|---|
+| 2 | 3 | 2 | 8 GB | 32 GB SSD | 6 | 24 GB | 96 GB |
+| 4 | 5 | 2 | 8 GB | 32 GB SSD | 10 | 40 GB | 160 GB |
+| 5 | 6 | 2 | 8 GB | 32 GB SSD | 12 | 48 GB | 192 GB |
+
+**n2-standard-2 machine specifications:**
+
+| Resource | Value |
+|---|---|
+| vCPUs | 2 |
+| RAM | 8 GB |
+| Boot disk | 32 GB SSD (standard persistent disk) |
+| GPU | None |
+| Network bandwidth | Up to 10 Gbps |
+| CPU platform | Intel Cascade Lake |
+
+### Cluster Lifecycle
+
+All scripts manage the cluster lifecycle automatically. If the cluster does not exist it is created with fallback across three machine types (e2-standard-2, n2-standard-2, n1-standard-2) and nine regions (us-central1, us-east1, us-east4, us-west1, us-west2, europe-west1, europe-west4, asia-east1, asia-southeast1) to handle regional quota exhaustion. If the cluster is stopped it is started rather than recreated to save 3 to 4 minutes. If it is already running it is reused immediately. After each job the cluster is stopped but not deleted so the next run skips the creation step.
 
 ---
 
