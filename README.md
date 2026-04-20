@@ -7,6 +7,8 @@
 
 This project builds a distributed data processing pipeline using Apache Spark on Google Cloud Dataproc. It processes 42 million e-commerce events through five analytical stages and includes a live web dashboard for running and monitoring the pipeline in real time. The GCP project, bucket, and cluster are already configured. No manual cloud setup is needed.
 
+> **All commands in this README are meant to be run inside the Codespaces terminal.** Open the project in Codespaces using the badge above, wait for it to finish building, then open the terminal from the menu (Terminal > New Terminal) and run the commands from there. Every session requires running `source ~/google-cloud-sdk/path.bash.inc` first to load the Google Cloud SDK into the terminal before any `gcloud` or `bash demo.sh cloud` commands will work.
+
 ---
 
 ## Screenshots
