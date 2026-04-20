@@ -9,10 +9,11 @@ echo "========================================================"
 # ── Auto-authenticate GCP via credentials secret ─────────────────────
 if [[ -n "${GCP_SERVICE_ACCOUNT_KEY}" ]]; then
     source "$HOME/google-cloud-sdk/path.bash.inc" 2>/dev/null || true
-    mkdir -p "$HOME/.config/gcloud"
+    mkdir -p "$HOME/.config/gcloud/legacy_credentials/daxrajani@gmail.com"
     echo "${GCP_SERVICE_ACCOUNT_KEY}" > "$HOME/.config/gcloud/application_default_credentials.json"
-    gcloud config set project project-a0b2f7d8-d4bf-4557-923 --quiet 2>/dev/null || true
-    gcloud config set account daxrajani@gmail.com --quiet 2>/dev/null || true
+    echo "${GCP_SERVICE_ACCOUNT_KEY}" > "$HOME/.config/gcloud/legacy_credentials/daxrajani@gmail.com/adc.json"
+    gcloud config set core/account daxrajani@gmail.com --quiet 2>/dev/null || true
+    gcloud config set core/project project-a0b2f7d8-d4bf-4557-923 --quiet 2>/dev/null || true
     echo ">>> GCP authenticated automatically."
 fi
 
