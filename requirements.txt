@@ -4,3 +4,5 @@ pyarrow
 matplotlib
 flask
 requests
+google-auth
+google-auth-httplib2

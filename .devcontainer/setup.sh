@@ -40,7 +40,9 @@ pip install --quiet \
     pyarrow \
     matplotlib \
     flask \
-    requests
+    requests \
+    google-auth \
+    google-auth-httplib2
 echo "    Done."
 
 # ── JAVA_HOME for PySpark ────────────────────────────────────────────

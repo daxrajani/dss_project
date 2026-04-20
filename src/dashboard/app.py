@@ -8,6 +8,19 @@ from flask import Flask, render_template, Response, jsonify, stream_with_context
 import subprocess, json, os, re, math, requests, time, threading, shutil
 from datetime import datetime, timedelta, timezone
 
+def _gcp_env():
+    """Return os.environ with a fresh GCP access token injected for gcloud subprocess calls."""
+    env = dict(os.environ)
+    try:
+        import google.auth
+        import google.auth.transport.requests
+        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        creds.refresh(google.auth.transport.requests.Request())
+        env["CLOUDSDK_AUTH_ACCESS_TOKEN"] = creds.token
+    except Exception:
+        pass
+    return env
+
 app = Flask(__name__)
 
 
@@ -38,7 +51,7 @@ def _gcloud_config(key):
     """Read a value from gcloud config (e.g. 'project', 'compute/region')."""
     r = subprocess.run(
         [GCLOUD, "config", "get-value", key],
-        capture_output=True, text=True)
+        capture_output=True, text=True, env=_gcp_env())
     val = r.stdout.strip()
     return val if val and val != "(unset)" else ""
 
@@ -57,7 +70,7 @@ def _detect_cluster():
         [c for c in [GCLOUD, "dataproc", "clusters", "list",
          f"--region={REGION}", proj_flag,
          "--format=value(clusterName,status.state)"] if c],
-        capture_output=True, text=True)
+        capture_output=True, text=True, env=_gcp_env())
     running = first = None
     for line in r.stdout.strip().splitlines():
         parts = line.split()
@@ -87,9 +100,16 @@ _resize_state = {"status": "idle", "workers": None, "error": None, "error_type":
 # ── Helpers ───────────────────────────────────────────────────────────
 
 def _gcloud_token():
-    r = subprocess.run([GCLOUD, "auth", "print-access-token"],
-                       capture_output=True, text=True)
-    return r.stdout.strip()
+    try:
+        import google.auth
+        import google.auth.transport.requests
+        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        creds.refresh(google.auth.transport.requests.Request())
+        return creds.token
+    except Exception:
+        r = subprocess.run([GCLOUD, "auth", "print-access-token"],
+                           capture_output=True, text=True, env=_gcp_env())
+        return r.stdout.strip()
 
 
 def _monitoring_get(params: dict) -> dict:
@@ -130,7 +150,7 @@ def nodes():
              f"--filter=name~{CLUSTER}",
              "--format=json",
              f"--project={PROJECT}"],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=_gcp_env())
     except FileNotFoundError:
         return jsonify({"error": f"gcloud not found at: {GCLOUD}"}), 500
     try:
@@ -232,7 +252,7 @@ def resize_cluster():
             [GCLOUD, "dataproc", "clusters", "describe", CLUSTER,
              f"--region={REGION}", f"--project={PROJECT}",
              "--format=value(status.state)"],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=_gcp_env())
         state = desc.stdout.strip()
 
         if state == "STOPPED":
@@ -240,7 +260,7 @@ def resize_cluster():
             start = subprocess.run(
                 [GCLOUD, "dataproc", "clusters", "start", CLUSTER,
                  f"--region={REGION}", f"--project={PROJECT}"],
-                capture_output=True, text=True, timeout=300)
+                capture_output=True, text=True, timeout=300, env=_gcp_env())
             if start.returncode != 0:
                 _resize_state = {"status": "failed", "workers": n,
                                  "error": start.stderr.strip(), "error_type": "start_failed"}
@@ -252,7 +272,7 @@ def resize_cluster():
              f"--num-workers={n}",
              f"--region={REGION}",
              f"--project={PROJECT}"],
-            capture_output=True, text=True, timeout=360)
+            capture_output=True, text=True, timeout=360, env=_gcp_env())
         if r.returncode != 0:
             err = r.stderr.strip()
             etype = ("capacity"
@@ -280,7 +300,7 @@ def cluster_workers():
         [GCLOUD, "dataproc", "clusters", "describe", CLUSTER,
          f"--region={REGION}", f"--project={PROJECT}",
          "--format=value(config.workerConfig.numInstances,status.state)"],
-        capture_output=True, text=True)
+        capture_output=True, text=True, env=_gcp_env())
     parts = r.stdout.strip().split()
     workers = int(parts[0]) if parts else 0
     state   = parts[1] if len(parts) > 1 else "UNKNOWN"
@@ -314,7 +334,7 @@ def submit():
             [GCLOUD, "dataproc", "clusters", "describe", CLUSTER,
              f"--region={REGION}", f"--project={PROJECT}",
              "--format=value(status.state)"],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=_gcp_env())
         state = desc.stdout.strip()
         if state == "RUNNING":
             break
@@ -336,7 +356,7 @@ def submit():
          "--input",  INPUT,
          "--output", f"{BUCKET}/results/demo_run",
          "--sample-fraction", str(fraction)],
-        capture_output=True, text=True)
+        capture_output=True, text=True, env=_gcp_env())
 
     if r.returncode != 0:
         return jsonify({"error": r.stderr.strip()}), 500
@@ -366,7 +386,7 @@ def stream_logs(job_id):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True, bufsize=1,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"})
+            env={**_gcp_env(), "PYTHONUNBUFFERED": "1"})
 
         for line in iter(proc.stdout.readline, ""):
             line = line.rstrip("\n")
@@ -392,7 +412,7 @@ def stop_vm(name):
     r = subprocess.run(
         [GCLOUD, "compute", "instances", "stop", name,
          f"--zone={ZONE}", f"--project={PROJECT}", "--async"],
-        capture_output=True, text=True)
+        capture_output=True, text=True, env=_gcp_env())
     return jsonify({"ok": r.returncode == 0, "msg": r.stderr.strip()})
 
 
@@ -403,7 +423,7 @@ def start_vm(name):
     r = subprocess.run(
         [GCLOUD, "compute", "instances", "start", name,
          f"--zone={ZONE}", f"--project={PROJECT}", "--async"],
-        capture_output=True, text=True)
+        capture_output=True, text=True, env=_gcp_env())
     return jsonify({"ok": r.returncode == 0, "msg": r.stderr.strip()})
 
 
@@ -423,7 +443,7 @@ def refresh_results():
             [GSUTIL, "-m", "rsync", "-r", "-d",
              f"{BUCKET}/results/demo_run/{d}/",
              f"{local_dir}/"],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=_gcp_env())
         if r.returncode != 0:
             errs.append(f"{d}: {r.stderr.strip()[:120]}")
     return jsonify({"ok": len(errs) == 0, "errors": errs})
