@@ -6,6 +6,19 @@ echo "========================================================"
 echo "  DSS Project — Codespace Setup"
 echo "========================================================"
 
+# ── Google Cloud CLI ─────────────────────────────────────────────────
+echo ""
+echo ">>> Installing Google Cloud CLI ..."
+if ! command -v gcloud &>/dev/null; then
+    curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir="$HOME"
+    echo "source $HOME/google-cloud-sdk/path.bash.inc" >> ~/.bashrc
+    echo "source $HOME/google-cloud-sdk/completion.bash.inc" >> ~/.bashrc
+    source "$HOME/google-cloud-sdk/path.bash.inc" 2>/dev/null || true
+    echo "    Done."
+else
+    echo "    Already installed: $(gcloud --version | head -1)"
+fi
+
 # ── Python packages ──────────────────────────────────────────────────
 echo ""
 echo ">>> Installing Python packages ..."

@@ -2,12 +2,6 @@
   "name": "DSS Pipeline — COEN 6731",
   "image": "mcr.microsoft.com/devcontainers/universal:2",
 
-  "features": {
-    "ghcr.io/devcontainers/features/google-cloud-cli:1": {
-      "version": "latest"
-    }
-  },
-
   "postCreateCommand": "bash .devcontainer/setup.sh",
 
   "forwardPorts": [5000],
