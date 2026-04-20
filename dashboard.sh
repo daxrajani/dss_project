@@ -2,8 +2,8 @@
 # DSS Demo Dashboard — start the web UI
 # Open http://localhost:5000 in your browser after running this.
 
-VENV="$HOME/dss_venv/bin/python3"
-SCRIPT="$(dirname "$0")/src/dashboard/app.py"
+PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python3)
+SCRIPT="$(cd "$(dirname "$0")" && pwd)/src/dashboard/app.py"
 
 echo ""
 echo "  ┌─────────────────────────────────────────────┐"
@@ -13,4 +13,4 @@ echo "  │  Ctrl+C to stop                              │"
 echo "  └─────────────────────────────────────────────┘"
 echo ""
 
-$VENV "$SCRIPT"
+$PYTHON "$SCRIPT"

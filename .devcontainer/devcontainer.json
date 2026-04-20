@@ -1,12 +1,8 @@
 {
   "name": "DSS Pipeline — COEN 6731",
-  "image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
 
   "features": {
-    "ghcr.io/devcontainers/features/java:1": {
-      "version": "17",
-      "jdkDistro": "ms"
-    },
     "ghcr.io/devcontainers/features/google-cloud-cli:1": {
       "version": "latest"
     }

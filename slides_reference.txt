@@ -1,0 +1,306 @@
+ ---
+  SLIDE 1: Problem Statement
+
+  (1 slide as per prof guidelines — no background/motivation)
+
+  Heading: Scalable E-commerce Analytics with Apache Spark
+
+  Content (bullet points):
+  - Processing large-scale e-commerce event data (40M+ rows) requires distributed computation for sessionization, funnel analysis, attribution, and anomaly
+  detection
+  - The problem: How to design a multi-stage PySpark pipeline that performs non-trivial distributed operations (window functions, temporal joins, rolling
+  aggregations) and scales efficiently across cluster sizes and data volumes
+  - Dataset: REES46 "eCommerce behavior data" — 42M events with view/cart/purchase actions across 167K products
+
+  Visual: None needed. Keep it clean text. You can put a small table:
+
+  ┌─────────────┬────────────────────────┐
+  │   Metric    │         Value          │
+  ├─────────────┼────────────────────────┤
+  │ Raw events  │ 42,448,764             │
+  ├─────────────┼────────────────────────┤
+  │ Event types │ view, cart, purchase   │
+  ├─────────────┼────────────────────────┤
+  │ Products    │ 166,794                │
+  ├─────────────┼────────────────────────┤
+  │ Time span   │ October 2019 (31 days) │
+  └─────────────┴────────────────────────┘
+
+  ---
+  SLIDE 2: System Architecture
+
+  (Solution slide 1 of 3 — prof requires system architecture diagram)
+
+  Heading: System Architecture
+
+  Content:
+  - 5-stage pipeline: ETL Enrichment → Sessionization → Funnel Analysis → Last-Touch Attribution → Anomaly Detection
+  - Input: Raw CSV from GCS bucket → Output: Parquet files on GCS
+  - Cluster: GCP Dataproc — 1 master + N workers (n1-standard-4, 4 vCPU, 15GB RAM each)
+  - All stages share a single SparkSession; intermediate results persisted as Parquet for columnar pruning
+
+  Visual: YOU MUST HAND-DRAW this diagram (prof prohibits AI-generated figures). Draw it like this:
+
+  [Raw CSV on GCS]
+        |
+        v
+  +-------------------+
+  | Stage 1: ETL      |  CRC32 hash → device/referrer synthesis
+  | Enrichment        |  Derive orders + catalog tables
+  +-------------------+
+        |  (Parquet)
+        v
+  +-------------------+
+  | Stage 2:          |  30-min inactivity window (lag + cumSum)
+  | Sessionization    |  Window.partitionBy(user_id).orderBy(event_time)
+  +-------------------+
+        |
+        v
+  +-------------------+
+  | Stage 3: Funnel   |  view→cart→purchase conversion rates
+  | Analysis          |  By (category, device, referrer, day/week)
+  +-------------------+
+        |
+        v
+  +-------------------+
+  | Stage 4: Last-    |  Join orders ⋈ non-direct sessions
+  | Touch Attribution |  24-hr lookback, row_number() desc
+  +-------------------+
+        |
+        v
+  +-------------------+
+  | Stage 5: Anomaly  |  7-day rolling avg/stddev, z-score > ±2
+  | Detection         |  SPIKE/DROP explanations
+  +-------------------+
+        |
+        v
+  [Parquet outputs on GCS]
+
+  Show the GCP Dataproc cluster on the right side: Master node coordinating Worker 1...Worker N, with data flowing through YARN/Spark executors.
+
+  ---
+  SLIDE 3: Implementation Details
+
+  (Solution slide 2 of 3 — prof requires implementation structure diagram)
+
+  Heading: Implementation Structure & Key Algorithms
+
+  Content (left side — text bullets):
+  - ETL: crc32(user_session) % 100 maps sessions to device (55/30/15%) and referrer (direct 40%, google 25%, facebook 15%, instagram 8%, email 7%, affiliate
+   5%)
+  - Sessionization: Window.partitionBy("user_id").orderBy("event_time") → lag() to compute gap → flag gaps > 30min → cumSum for session index → session_id =
+   user_id + "_" + idx
+  - Attribution: Left join orders with non-direct session_referrers where session_start ≤ order_time and gap ≤ 24hr → row_number() descending picks most
+  recent
+  - Anomaly Detection: rangeBetween(-7days, -1day) rolling window → avg(), stddev() → z-score = (count - avg) / stddev → flag |z| > 2
+
+  Visual: YOU MUST HAND-DRAW the implementation structure. Show the module/file layout:
+
+  src/
+  ├── cloud_pipeline.py        ← Main entry point (Dataproc submission)
+  │     calls: run_etl() → run_sessionization() → run_funnel_analysis()
+  │            → run_attribution() → run_anomaly_detection()
+  ├── etl_enrichment.py        ← _add_device(), _add_referrer(), derive orders/catalog
+  ├── attribution.py           ← _derive_sessions(), build_session_referrers(), attribute_orders()
+  ├── anomaly_detection.py     ← _apply_rolling_zscore(), compute_daily/category_anomalies()
+  ├── benchmark_job.py         ← Local benchmark orchestrator
+  ├── analyze_results.py       ← Log parser → CSV + matplotlib charts
+  ├── cloud_broadcast_join.py  ← Broadcast join optimization experiment
+  ├── cloud_skew_analysis.py   ← Skew/salting experiment
+  └── cloud_partition_analysis.py ← Parquet partitioning experiment
+
+  ---
+  SLIDE 4: Strengths, Limitations & Distributed Concepts
+
+  (Solution slide 3 of 3)
+
+  Heading: Design Decisions & Distributed Systems Concepts
+
+  Content:
+
+  Distributed concepts exercised:
+  - Window functions across partitions (sessionization, attribution ranking)
+  - Shuffle-heavy joins (orders ⋈ sessions on user_id with time constraints)
+  - Broadcast join optimization (eliminate shuffle for small tables)
+  - Partition pruning (date-partitioned Parquet for selective I/O)
+  - Rolling window aggregations with rangeBetween (anomaly baseline)
+
+  Strengths:
+  - Deterministic enrichment (CRC32) ensures reproducibility across runs
+  - Single self-contained script for cloud submission (no dependency installs)
+  - All 5 stages instrumented with time.time() for precise benchmarking
+
+  Limitations:
+  - Device/referrer are synthetic (not real user data) — limits business insight
+  - Attribution re-derives sessions instead of reusing Stage 2 output (trades compute for simplicity)
+  - Anomaly detection's Window.orderBy() without partition causes single-partition warning for system-level analysis
+
+  Visual: No chart. You could add a simple table of distributed operations per stage.
+
+  ---
+  SLIDE 5: Evaluation Setup & Scaling Results
+
+  (Evaluation slide 1 of 3)
+
+  Heading: Evaluation Setup & Scaling Study
+
+  Content:
+  - Testbed: GCP Dataproc, us-central1, n1-standard-4 machines (4 vCPU, 15GB RAM)
+  - Configurations: 3 cluster sizes × 3 data sizes = 9 runs
+
+  ┌─────────┬───────────────────┬──────────────────┬───────────────────┐
+  │ Workers │ ~1 GB (8.5M rows) │ ~5 GB (42M rows) │ ~10 GB (85M rows) │
+  ├─────────┼───────────────────┼──────────────────┼───────────────────┤
+  │ 2       │ 674s              │ 1,022s           │ 1,379s            │
+  ├─────────┼───────────────────┼──────────────────┼───────────────────┤
+  │ 4       │ 282s              │ 569s             │ 800s              │
+  ├─────────┼───────────────────┼──────────────────┼───────────────────┤
+  │ 5       │ 257s              │ 410s             │ 674s              │
+  └─────────┴───────────────────┴──────────────────┴───────────────────┘
+
+  - 10GB variant created via union-doubling (original + prefixed-ID copy)
+  - Best throughput: 125,961 rows/sec (5 workers, 10GB)
+
+  Visual: Use results/charts/chart_heatmap.png — the heatmap shows all 9 configs at a glance with color intensity for time. This is the most impactful
+  single chart.
+
+  ---
+  SLIDE 6: Speedup & Throughput Analysis
+
+  (Evaluation slide 2 of 3)
+
+  Heading: Speedup & Throughput Analysis
+
+  Content (split slide into two halves):
+
+  Left half — Speedup:
+  - 2→5 workers on 10GB: 1,379s → 674s = 2.05x speedup (vs 2.5x ideal)
+  - 2→5 workers on 5GB: 1,022s → 410s = 2.49x speedup (near-linear!)
+  - Larger datasets achieve better parallel efficiency (more work per executor offsets overhead)
+
+  Right half — Throughput:
+  - 10GB throughput scales: 62K → 106K → 126K rows/sec (2→4→5 workers)
+  - 5GB reaches 104K rows/sec at 5 workers
+  - Sub-linear scaling due to I/O bottleneck on ETL write stage (Parquet serialization)
+
+  Visual: Use TWO charts side by side:
+  - Left: results/charts/chart_speedup.png
+  - Right: results/charts/chart_throughput.png
+
+  ---
+  SLIDE 7: Stage Breakdown & Optimization Experiments
+
+  (Evaluation slide 3 of 3)
+
+  Heading: Stage Breakdown & Optimization Experiments
+
+  Content (top half):
+  - ETL write + Attribution session_referrers build are the dominant stages (~60% of total time)
+  - Anomaly detection is negligible (<3%) — aggregation on small daily tables
+  - I/O (Parquet write) dominates over compute at all scales
+
+  Content (bottom half — optimization results table):
+
+  ┌──────────────────────────────────────┬──────────────────┬─────────────────────┬────────────────┐
+  │             Optimization             │     Baseline     │      Optimized      │    Speedup     │
+  ├──────────────────────────────────────┼──────────────────┼─────────────────────┼────────────────┤
+  │ Broadcast join (attribution)         │ 11.33s (shuffle) │ 7.15s (broadcast)   │ 1.58x          │
+  ├──────────────────────────────────────┼──────────────────┼─────────────────────┼────────────────┤
+  │ Partition pruning (single-day query) │ 4.25s (flat)     │ 1.37s (partitioned) │ 3.11x          │
+  ├──────────────────────────────────────┼──────────────────┼─────────────────────┼────────────────┤
+  │ Partition pruning (7-day range)      │ 3.09s (flat)     │ 1.78s (partitioned) │ 1.73x          │
+  ├──────────────────────────────────────┼──────────────────┼─────────────────────┼────────────────┤
+  │ Key salting (skew mitigation)        │ 34.6s            │ 79.1s               │ 0.44x (worse!) │
+  └──────────────────────────────────────┴──────────────────┴─────────────────────┴────────────────┘
+
+  - Key insight: Salting was counterproductive — top user is only 0.02% of events (no real skew). The 20x cross-join replication adds more overhead than it
+  saves.
+
+  Visual: Use results/charts/chart_stage_breakdown.png (the stacked bar chart) at the top of the slide.
+
+  ---
+  SLIDE 8: Lessons Learned
+
+  (Not explicitly required by prof in slides, but uses remaining slide budget and adds value)
+
+  Heading: Lessons Learned
+
+  Content (2-4 concrete, project-specific lessons — as required by the report):
+
+  1. I/O dominates compute at scale. Parquet write time was 33-48% of total pipeline time across all configurations. The ETL write stage alone took 224s on
+  5-worker/10GB — more than all compute stages combined. Lesson: optimize serialization (e.g., tune parquet.block.size, use snappy compression) before
+  adding more workers.
+  2. Optimization must match data characteristics. Key salting (a textbook skew mitigation) made attribution 2.3x slower because the REES46 dataset has low
+  key skew (top user = 0.02% of events). Broadcast join was effective because orders table is small relative to sessions. Always profile before optimizing.
+  3. Larger datasets parallelize better. The 1GB dataset achieved only 1.03x speedup going from 4→5 workers (diminishing returns — overhead ≈ useful work).
+  The 10GB dataset achieved 1.19x for the same step. Lesson: cluster sizing should be proportional to data volume; over-provisioning small datasets wastes
+  resources.
+  4. Single-script deployment simplifies cloud ops. Packaging all 5 stages into one cloud_pipeline.py (no pip installs, no module imports) eliminated
+  dependency issues on Dataproc and made the benchmark fully automated via shell scripts.
+
+  Visual: No chart needed. Clean text bullets.
+
+  ---
+  Summary of which charts go where:
+
+  ┌───────────┬───────────────────────────┬────────────────────────────────────┐
+  │   Slide   │        Chart file         │           What it shows            │
+  ├───────────┼───────────────────────────┼────────────────────────────────────┤
+  │ 5         │ chart_heatmap.png         │ Time heatmap (workers × data size) │
+  ├───────────┼───────────────────────────┼────────────────────────────────────┤
+  │ 6 (left)  │ chart_speedup.png         │ Speedup curves vs ideal linear     │
+  ├───────────┼───────────────────────────┼────────────────────────────────────┤
+  │ 6 (right) │ chart_throughput.png      │ Throughput scaling                 │
+  ├───────────┼───────────────────────────┼────────────────────────────────────┤
+  │ 7         │ chart_stage_breakdown.png │ Stacked bar of stage times         │
+  └───────────┴───────────────────────────┴────────────────────────────────────┘
+
+  Unused charts you can optionally swap in:
+  - chart_total_time.png — could replace heatmap on slide 5 if you prefer line chart
+  - chart_attribution_scaling.png — could go on slide 7 if you want to show attribution specifically
+
+  Diagrams you MUST draw by hand (per prof's strict rule):
+  - Slide 2: System architecture (pipeline flow + GCP Dataproc cluster layout)
+  - Slide 3: Implementation structure (module/file diagram with key functions)
+
+✻ Sautéed for 2m 49s
+
+● Agent "Explore project_related_docs folder" completed
+
+● Agent "Explore project code folder" completed
+
+● Both agents have completed. The code exploration agent confirmed everything I already covered above. The docs agent couldn't access the
+  project_related_docs folder directly, but I already read both PDFs from there (the project descriptions) which informed the slide structure.
+
+  The full slide-by-slide content is in my previous message above. To recap what you have:
+
+  8 slides total (matches prof's max), structured per guidelines:
+  - Slide 1 — Problem Statement (1 slide, no background)
+  - Slides 2-4 — Solution (3 slides: architecture, implementation, design decisions)
+  - Slides 5-7 — Evaluation Results (3 slides: setup+heatmap, speedup+throughput, stage breakdown+optimizations)
+  - Slide 8 — Lessons Learned
+
+  6 code-generated charts available (all in results/charts/):
+
+  ┌───────────────────────────────┬───────────────────┐
+  │             Chart             │ Recommended Slide │
+  ├───────────────────────────────┼───────────────────┤
+  │ chart_heatmap.png             │ Slide 5           │
+  ├───────────────────────────────┼───────────────────┤
+  │ chart_speedup.png             │ Slide 6 (left)    │
+  ├───────────────────────────────┼───────────────────┤
+  │ chart_throughput.png          │ Slide 6 (right)   │
+  ├───────────────────────────────┼───────────────────┤
+  │ chart_stage_breakdown.png     │ Slide 7           │
+  ├───────────────────────────────┼───────────────────┤
+  │ chart_total_time.png          │ Spare/swap        │
+  ├───────────────────────────────┼───────────────────┤
+  │ chart_attribution_scaling.png │ Spare/swap        │
+  └───────────────────────────────┴───────────────────┘
+
+  2 diagrams you MUST hand-draw (prof strictly prohibits AI-generated figures):
+  1. System architecture (Slide 2) — pipeline flow + GCP Dataproc cluster
+  2. Implementation structure (Slide 3) — module/file diagram with key functions
+
+  All the text content, bullet points, table data, and specific numbers are ready in the previous message. Just copy them into your slides. Let me know if
+  you need anything adjusted or expanded!
