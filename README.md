@@ -147,14 +147,31 @@ Click the Codespaces badge at the top. The environment builds automatically in a
 
 ### Option A: Live Web Dashboard
 
-```bash
-# Install dependencies (already done in Codespaces)
-pip install -r requirements.txt
+**Step 1:** Install dependencies
 
-# Launch the dashboard
-bash dashboard.sh
-# Open http://localhost:5000
+```bash
+pip install -r requirements.txt
 ```
+
+**Step 2:** Load the gcloud CLI into your terminal session
+
+```bash
+source ~/google-cloud-sdk/path.bash.inc
+```
+
+**Step 3:** Authenticate with GCP. This will print a URL in the terminal. Open that URL in your browser, sign in with your Google account, and copy the verification code it gives you. Paste that code back into the terminal and press Enter.
+
+```bash
+gcloud auth login
+```
+
+**Step 4:** Launch the dashboard
+
+```bash
+bash dashboard.sh
+```
+
+Then open http://localhost:5000 in your browser. The dashboard will show the Dataproc cluster nodes and you can run the full pipeline from there.
 
 What the dashboard provides:
 
