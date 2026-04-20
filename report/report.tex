@@ -25,6 +25,7 @@
 
 \setlength{\parskip}{0pt}
 \setlength{\parindent}{1em}
+\setlength{\emergencystretch}{3em}
 
 % ── Title ────────────────────────────────────────────────────────────────────
 \title{\Large \bf Scaling E-commerce Analytics:\\
@@ -538,61 +539,51 @@ intermediate data. This confirms that Spark's fault tolerance model is correct b
 not zero-cost.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section{Strengths \& Weaknesses}
+\section{Lessons Learned}
 
-\subsection*{Strengths}
+\textbf{Check for skew before applying salting.}
+We assumed the attribution join would have skew because session counts per user
+are usually uneven in e-commerce data. Based on that assumption we implemented
+salting, which adds a random suffix to join keys to spread hot partitions across
+executors. The salted run took 79.1 seconds versus 34.6 seconds unsalted, more
+than twice as slow. When we looked at the Spark UI task time histogram, no
+executor held more than 1.3x the average load. The REES46 dataset turns out to
+have unusually uniform session distribution. The lesson is to always check the
+task time histogram before applying salting. If the longest task is less than 2x
+the median, there is no real skew and salting will only add overhead from the
+extra explode and two-phase join.
 
-\textbf{Near-linear scaling with good I/O efficiency.}
-The pipeline achieves 2.49x speedup going from 2 to 5 workers on the 5 GB workload,
-close to the theoretical maximum. Parquet's columnar format compresses 5.3 GB of
-raw CSV to 1.2 GB (4.4x), which cuts I/O cost for every downstream stage. Spark's
-Catalyst optimizer and lazy DAG evaluation ensure that only the columns and
-partitions actually needed by each stage are read.
+\textbf{Write partitioned output from the start, not as an afterthought.}
+We added date partitioning to the ETL output during the optimization phase, after
+the rest of the pipeline was already built. The speedup was 3.11x for single-day
+queries and 1.73x for 7-day range queries, and the change cost almost nothing at
+write time since Spark handles it automatically with \texttt{partitionBy("event\_date")}.
+In hindsight, any pipeline that runs time-range queries should write partitioned
+Parquet from day one. We spent time during development doing full scans that
+could have been avoided entirely if we had partitioned the ETL output from the
+beginning.
 
-\textbf{Broadcast join and partition pruning deliver real speedups.}
-Forcing a broadcast hint on the orders table produced a 1.58x speedup with no
-change to output correctness. Date partitioning gave a 3.11x speedup on single-day
-queries. Both optimizations are low-risk and easy to apply; they represent
-straightforward wins that should be used by default in any time-series pipeline.
+\textbf{GCS write cost grows faster than compute cost as data scales.}
+At the 5 GB scale, writing Parquet back to GCS between stages felt fast. At 10 GB
+it became the bottleneck: writing outputs across all five stages took approximately
+477 seconds, which is about 35\% of the total 674-second runtime. The compute
+stages themselves scaled reasonably with more data, but GCS write latency did not
+drop with more workers since it is a network-bound operation. For pipelines that
+write intermediate results to object storage between every stage, I/O will
+eventually dominate over computation, and caching hot datasets in executor memory
+or reducing the number of write points becomes necessary.
 
-\textbf{Fault tolerance works correctly without manual intervention.}
-Killing a worker mid-run caused the Spark driver to detect the lost executor and
-reassign its tasks automatically. The pipeline completed without any manual steps.
-This confirms that the lineage-based recovery model is robust for the workloads we
-tested.
-
-\subsection*{Weaknesses}
-
-\textbf{GCS I/O is the dominant bottleneck at 10 GB scale.}
-Writing Parquet outputs accounts for approximately 477 seconds out of 674 seconds
-total runtime on the 10 GB dataset, roughly 35\% of total time. The pipeline writes
-all intermediate results back to GCS between stages, which simplifies recovery but
-makes I/O the limiting factor, not CPU or memory. Caching hot intermediate datasets
-in executor memory or using a persistent shuffle service would reduce this overhead.
-
-\textbf{Salting adds cost when data is already uniform.}
-We expected the attribution join to show skew because sessions per user follow a
-heavy-tailed distribution in most e-commerce datasets. The REES46 October dataset
-has unusually uniform session counts per user. The explode operation that replicates
-orders rows across salt buckets added 44 seconds of overhead with no benefit. The
-Spark UI task-time histogram is the correct diagnostic before applying salting: if
-the longest task is less than 2x the median, salting will make things worse.
-
-\textbf{Fault tolerance recovery has real cost.}
-The 90-second overhead from losing one worker is a 22\% increase in total runtime
-for a 410-second job. Task reassignment requires re-reading input partitions from
-GCS from scratch because Spark's lineage recovery does not cache intermediate state
-across executor failures. For time-sensitive production jobs, a spare warm worker
-or stage checkpointing would reduce this overhead significantly.
-
-\textbf{GCP error messages obscure root causes.}
-Early in the project, cluster creation failed with misleading machine-availability
-errors. The actual cause was an \texttt{INVALID\_ARGUMENT} error from requesting
-500 GB of HDFS disk per node, which exceeded the project quota. The fix was to
-reduce to 32 GB per node. The root cause only appeared in the full GCP operations
-body retrieved via \texttt{gcloud operations describe}, not in the top-level
-Dataproc API response. In distributed deployments, the useful error is often one
-layer below what the management tool surfaces.
+\textbf{Spark recovers from failures correctly but the cost is not zero.}
+We killed worker \texttt{w-0} mid-pipeline to test fault tolerance and the job
+completed successfully without any manual action. However, the recovery added
+about 90 seconds to a run that normally takes 410 seconds, a 22\% overhead.
+The extra cost comes from two places: the 15-second detection delay before
+Spark notices the lost executor, and the fact that reassigned tasks must re-read
+their input partitions from GCS from scratch because Spark does not cache
+intermediate state across executor failures. Spark's fault tolerance model is
+correct by design, but for jobs where recovery time matters, keeping a spare
+warm worker or checkpointing expensive stages would reduce the penalty
+significantly.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Availability}
@@ -627,7 +618,7 @@ abstraction for in-memory cluster computing. In \textit{Proc. NSDI}, 2012.
 clusters. \textit{Communications of the ACM}, 51(1):107--113, 2008.
 
 \item REES46 eCommerce behavior data from multi-category store.
-\url{https://www.kaggle.com/datasets/mkechinov/ecommerce-behavior-data-from-multi-category-store}.
+{\footnotesize\url{https://www.kaggle.com/datasets/mkechinov/ecommerce-behavior-data-from-multi-category-store}}.
 Accessed 2025.
 
 \item M. Armbrust, T. Das, J. Torres, B. Yavuz, S. Zeng, R. Xin, A. Ghodsi,
